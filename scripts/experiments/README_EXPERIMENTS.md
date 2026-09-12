@@ -1,0 +1,247 @@
+# Experiments (tasks 1–6)
+
+Everything here runs from the repo root on the host; each script dispatches
+itself into the right container.
+
+```bash
+bash scripts/experiments/run_all.sh          # all six tasks + figures
+bash scripts/experiments/run_all.sh 1 2      # just the image RD pair
+```
+
+| # | Script | Container | Cost |
+|---|---|---|---|
+| 1 | `exp1_dcvc_image_rd.py` | image-compression | seconds |
+| 2 | `exp2_vtm_intra_rd.sh` | hybrid-vtm | ~4 min |
+| 3 | `exp3_dcvc_video_rd.py` | video-compression | ~6 min |
+| 4 | `exp4_vtm_inter_rd.sh` | hybrid-vtm | ~30 min (8 frames) |
+| 5 | `exp5_adain_styles.sh` | style-transfer | ~1 min |
+| 6 | `exp6_sr_compare.py` | super-resolution | ~20 s |
+| 6b | `exp6b_perception_distortion.py` | super-resolution | ~30 s |
+
+Bulk intermediates (reconstructed `.yuv`, bitstreams) land in
+`outputs/experiments/` and are git-ignored. **Figures and the RD numbers behind
+them are committed to `results/`** — six RD figures (one per task plus the two
+overlays) and the AdaIN / super-resolution sheets.
+
+---
+
+## Measurement rules
+
+Four decisions make the curves comparable. Each one was a bug first.
+
+**1. One source file, one colour space.** kodim19.png is converted to YUV420
+once (`outputs/experiments/kodim19_420.yuv`) and *both* the DCVC and VTM image
+experiments read that same file. Comparing an RGB-domain PSNR against a
+YUV-domain one is not a comparison.
+
+**2. One PSNR tool.** VTM prints its own YUV-PSNR; DCVC's `test_video.py` uses
+`(6Y + U + V)/8`. They are different definitions and disagree by roughly half a
+dB. Every experiment writes a reconstructed `.yuv` and calls
+`yuv_psnr.py`, which implements the DCVC convention for everyone.
+
+**3. Bit depth is detected, not assumed.** The VTM configs set
+`InternalBitDepth: 10` and write the reconstruction at that depth — 10 bits
+inside 16-bit words. Read as 8-bit it produces noise and a PSNR near 7 dB, which
+looks like a broken codec rather than a broken reader. `yuv_psnr.py` detects the
+container width from the file size and scales 16-bit samples down for the
+comparison. The scripts also pass `--OutputBitDepth=8` so new runs are 8-bit
+throughout.
+
+**4. DCVC rate is measured the way the coder would, not the way training did.**
+This one changes the conclusion. `forward_one_frame` estimates bits as
+`get_prob_train(add_noise(y_res), scales)`, where `add_noise` adds
+uniform(−0.5, 0.5) — the continuous relaxation that keeps training
+differentiable. It is a variational upper bound, and at low rate it is badly
+loose: a latent that quantises to exactly 0 and costs almost nothing still
+carries entropy once noise is added, so the estimate has a floor.
+
+`get_prob_train(v, s)` is the Gaussian mass over `[v−0.5, v+0.5]` — exactly a
+quantisation bin — so feeding it the *rounded* value gives the arithmetic
+coder's rate. `process_with_mask` defines `y_q = QuantFunc.apply(y_res) =
+round(y_res)`, so `dcvc_yuv.eval_rate()` swaps `add_noise` for `round` and
+reproduces the real symbols. Measured on kodim19:
+
+| qp | train-mode bpp | eval-mode bpp | YUV-PSNR (unchanged) |
+|---:|---:|---:|---:|
+| 0 | 0.1898 | **0.0239** | 30.89 dB |
+| 63 | 0.8981 | **0.7642** | 41.76 dB |
+
+Uncorrected, DCVC-UF looked several dB *worse* than VTM at low rate — the
+opposite of the published result, and an artefact of the measurement.
+
+**Remaining caveat:** DCVC rates are still estimates. The real encoder needs the
+CUDA-only CUTLASS extension, and the entropy coder's skip threshold and rANS
+overhead are not modelled. VTM's rates are real bytes on disk.
+
+---
+
+## Task 4 — two deviations from the brief, both deliberate
+
+**Frame count: 8, not 64.** VTM is a reference encoder. Measured here on
+416×240 random access, one 64-frame point costs 494 s at QP 42 and over an hour
+at QP 0; the full sweep was heading past five hours for a curve whose shape is
+already clear at 8 frames. The default is 8. `VTM_FRAMES=64 bash
+scripts/experiments/run_all.sh 4` restores the brief if you want it overnight.
+
+Task 3 (DCVC) still runs the full 64 frames — it is fast enough that there was
+no reason to cut it.
+
+**The frame counts are matched for the comparison figure.** Frames 0–7 and 0–63
+of RaceHorses are different content, so a 64-frame neural curve plotted against
+an 8-frame VTM curve would be comparing two sequences. `exp3` is therefore also
+run with `--frames 8 --tag 8f`, and `plot_rd.py` picks the DCVC files whose
+frame count matches VTM's. The 64-frame results remain the task-3 deliverable.
+
+**QP list.** The brief asked for QP `0 15 30 45 63` for VTM inter, the same list
+as task 3. VTM's QP is not DCVC's qp index: VTM QP 0 is near-lossless (measured
+4.36 bpp on this sequence) and QP 63 falls far below any rate the neural codec
+reaches, so that list yields a curve that barely shares an axis with anything
+else. Both sets are run — `--tag requested` (`0 15 30 45 63`) and `--tag std`
+(`22 27 32 37 42`, the JVET common-test QPs, which overlap the DCVC range) — and
+`plot_rd.py` merges them into a single curve, because they are one codec sampled
+at ten operating points, not two codecs.
+
+QPs are encoded cheapest-first and `rd.json` is rewritten after every point, so
+an interrupted run still yields a usable curve. `rebuild_rd.py` re-measures an
+existing directory without re-encoding — useful when only the measurement
+changed, which during this work it did twice.
+
+---
+
+## Results
+
+### Task 1 + 2 — image, kodim19 (512×768)
+
+| DCVC-UF-Intra qp | bpp | YUV-PSNR | | VTM intra QP | bpp | YUV-PSNR |
+|---:|---:|---:|---|---:|---:|---:|
+| 0 | 0.0239 | 30.89 | | 42 | 0.0729 | 33.00 |
+| 15 | 0.0499 | 33.00 | | 37 | 0.1551 | 35.08 |
+| 30 | 0.1103 | 35.17 | | 32 | 0.3506 | 37.70 |
+| 45 | 0.2958 | 37.90 | | 27 | 0.6936 | 40.84 |
+| 63 | 0.7642 | 41.76 | | 22 | 1.1735 | 44.03 |
+
+At an equal 33.00 dB, DCVC-UF-Intra spends 0.0499 bpp against VTM's 0.0729 —
+**about 31 % fewer bits**. The gap narrows to roughly 8 % at the high-rate end.
+(The paper reports 10.6 % averaged over all of Kodak; this is one image.)
+
+### Task 3 — video, RaceHorses, first 64 frames
+
+| qp | HTS bpp | HTS PSNR | LD bpp | LD PSNR |
+|---:|---:|---:|---:|---:|
+| 0 | 0.0041 | 25.05 | 0.0071 | 26.27 |
+| 15 | 0.0107 | 27.27 | 0.0171 | 28.58 |
+| 30 | 0.0283 | 29.45 | 0.0455 | 31.11 |
+| 45 | 0.0797 | 31.63 | 0.1238 | 33.94 |
+| 63 | 0.1932 | 33.29 | 0.3268 | 36.89 |
+
+HTS codes 8 frames into one latent; LD codes one at a time. At matched quality
+HTS is the cheaper of the two, which is the chunk design paying off.
+
+The 8-frame variants used for the VTM comparison (`rd_*_8f.json`) sit at higher
+bpp across the board — the intra frame's cost is amortised over 8 frames instead
+of 64, not a difference in the codec.
+
+### Task 4 — VTM inter (RA), RaceHorses, first 8 frames
+
+| QP | bpp | YUV-PSNR | set |
+|---:|---:|---:|---|
+| 0 | 4.3623 | 59.24 | requested |
+| 15 | 1.1727 | 45.18 | requested |
+| 22 | 0.5184 | 40.08 | std |
+| 27 | 0.2828 | 36.57 | std |
+| 30 | 0.2007 | 34.83 | requested |
+| 32 | 0.1595 | 33.71 | std |
+| 37 | 0.0867 | 31.19 | std |
+| 42 | 0.0471 | 28.80 | std |
+| 45 | 0.0339 | 27.50 | requested |
+| 63 | 0.0059 | 20.73 | requested |
+
+The two sets sample one curve. Note QP 0 at 4.36 bpp and QP 15 at 1.17 bpp: the
+requested list reaches an order of magnitude past anything the neural codec is
+asked for, which is why `plot_rd.py` uses a log rate axis.
+
+**The 8-frame comparison understates DCVC-UF.** With 1 intra + 7 inter frames the
+intra frame dominates the rate, so the temporal prior barely gets to pay for
+itself. DCVC-UF's own numbers show the effect: HTS at qp 0 costs 0.0113 bpp over
+8 frames and 0.0041 bpp over 64, purely from amortising the intra frame. The
+published DCVC-UF-vs-VTM result uses long sequences. Treat the video figure as
+"the pipeline works end to end and both codecs are measured identically", not as
+a verdict on which codec is better.
+
+### Task 6 — x4 super-resolution on kodim19
+
+| method | PSNR | SSIM | time |
+|---|---:|---:|---:|
+| nearest | 23.17 dB | 0.655 | 0.001 s |
+| bilinear | 23.44 dB | 0.659 | 0.002 s |
+| bicubic | 23.71 dB | 0.677 | 0.002 s |
+| lanczos | **23.79 dB** | **0.683** | 0.004 s |
+| Real-ESRGAN | 23.14 dB | 0.662 | 4.48 s |
+
+**Real-ESRGAN loses on both metrics and is ~1200× slower — and still looks far
+better.** Task 6b below takes that apart.
+
+### Task 6b — why fidelity metrics and the eye disagree
+
+`exp6b_perception_distortion.py`, figure `results/figures/sr_perception_distortion.png`.
+Four measurements, four separate reasons.
+
+**A. A perceptual metric ranks it first.**
+
+| method | PSNR | SSIM | LPIPS (lower better) | sharpness |
+|---|---:|---:|---:|---:|
+| nearest | 23.17 dB | 0.6552 | **0.4166** | 147 |
+| bilinear | 23.44 dB | 0.6589 | **0.5310** | 30 |
+| bicubic | 23.71 dB | 0.6766 | **0.5288** | 40 |
+| lanczos | 23.79 dB | 0.6826 | **0.5362** | 44 |
+| realesrgan | 23.14 dB | 0.6623 | **0.2412** | 245 |
+
+LPIPS puts Real-ESRGAN **2.2× ahead** of lanczos
+while PSNR puts it last. The metrics are not noisy versions of each other; they
+ask different questions.
+
+**B. PSNR is phase-sensitive.** Take the untouched original and shift it one
+pixel: **22.86 dB**, *below* Real-ESRGAN's
+23.14 dB. A pixel-perfect photograph, moved one pixel,
+scores worse than the "bad" reconstruction. PSNR asks whether each pixel is
+where it was, not whether the image looks like the scene. Texture that is
+statistically right but half a pixel off is punished exactly like texture that
+is wrong.
+
+**C. The metric rewards destroying detail.** Gaussian-blur the Real-ESRGAN output:
+
+| sigma | PSNR | SSIM | sharpness |
+|---:|---:|---:|---:|
+| 0.0 | 23.14 dB | 0.6623 | 245 |
+| 0.3 | 23.24 dB | 0.6637 | 218 |
+| 0.5 | 23.43 dB | 0.6699 | 167 |
+| 0.8 | 23.64 dB | 0.6771 | 104 |
+| 1.2 | 23.62 dB | 0.6740 | 61 |
+| 1.6 | 23.42 dB | 0.6609 | 40 |
+
+PSNR **peaks at sigma 0.8** — blurring gains
+0.50 dB while removing
+57% of the gradient energy.
+SSIM peaks there too, so this is not an MSE quirk.
+
+**D. Across methods, PSNR is ranking smoothness.**
+corr(PSNR, sharpness) = **-0.83**.
+
+**Why this happens.** Super-resolution is ill-posed: many high-res images
+downsample to the same low-res one. The MSE-optimal estimator is the posterior
+mean E[HR | LR] — an *average* over every plausible texture — and the average of
+many plausible textures is a blur. So the PSNR-maximising answer is blurry by
+construction. A GAN instead matches the *distribution* of natural images, which
+necessarily moves it off the posterior mean; Blau & Michaeli (CVPR 2018) proved
+this is a genuine tradeoff, not an engineering failure.
+
+**One confound of our own.** Real-ESRGAN was trained on a second-order
+real-world degradation model (blur + noise + JPEG + resize). This benchmark feeds
+it a clean bicubic downsample — out of its training distribution. A
+bicubic-trained model (EDSR, or ESRGAN's PSNR-oriented variant) would score
+better here without looking better.
+
+**For the course:** never show the metric table without the crops. Compare the railing in `results/figures/sr_comparison.png`. It is a GAN trained
+for perceptual quality on real-world degradations, and this benchmark hands it a
+clean bicubic downsample; PSNR penalises invented texture even when the texture
+is right. Do not read the table without the pictures.

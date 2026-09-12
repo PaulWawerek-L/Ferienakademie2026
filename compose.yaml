@@ -1,0 +1,103 @@
+name: ferienakademie2026
+
+# Common runtime settings. Volumes are listed per service rather than shared
+# through this anchor: a service that declares `volumes:` replaces the anchor's
+# list instead of extending it (YAML cannot merge lists), and silently losing a
+# mount is worse than a few repeated lines in a file students are meant to read.
+x-common: &common
+  working_dir: /work
+  stdin_open: true
+  tty: true
+  environment:
+    OMP_NUM_THREADS: ${OMP_NUM_THREADS:-4}
+
+# Dataset is read-only so a stray script cannot corrupt the 45 MB .yuv.
+# weights/ and outputs/ are read-write and live on the host, so downloads survive
+# `docker compose down` and results open straight from Finder/Explorer.
+#
+# third_party/<repo> is mounted OVER the copy the image cloned at build time.
+# The image still works standalone, but with the mount the upstream source is
+# editable on the host: your editor can navigate it, and a change takes effect on
+# the next run with no rebuild. Run `make sources` first to populate it.
+
+services:
+  image-compression:
+    <<: *common
+    build: &dcvc_build
+      context: docker/dcvc
+      args:
+        BASE_IMAGE: ferienakademie/base:cpu
+    image: ferienakademie/dcvc:cpu
+    volumes:
+      - ./Dataset:/work/Dataset:ro
+      - ./weights:/work/weights
+      - ./outputs:/work/outputs
+      - ./results:/work/results
+      - ./projects:/work/projects
+      - ./scripts:/work/scripts
+      - ./third_party/DCVC:/opt/DCVC
+
+  # Same image and same source as 01 -- DCVC-UF-Intra is the intra-frame codec of
+  # the same model, so a second environment would be pure duplication.
+  video-compression:
+    <<: *common
+    build: *dcvc_build
+    image: ferienakademie/dcvc:cpu
+    volumes:
+      - ./Dataset:/work/Dataset:ro
+      - ./weights:/work/weights
+      - ./outputs:/work/outputs
+      - ./results:/work/results
+      - ./projects:/work/projects
+      - ./scripts:/work/scripts
+      - ./third_party/DCVC:/opt/DCVC
+
+  # The only project with no PyTorch at all. The VTM binaries are compiled into
+  # the image; the source is mounted read-only so it can be read, not rebuilt.
+  hybrid-vtm:
+    <<: *common
+    build:
+      context: docker/vtm
+      args:
+        VTM_TAG: ${VTM_TAG:-VTM-23.14}
+    image: ferienakademie/vtm:latest
+    volumes:
+      - ./Dataset:/work/Dataset:ro
+      - ./weights:/work/weights
+      - ./outputs:/work/outputs
+      - ./results:/work/results
+      - ./projects:/work/projects
+      - ./scripts:/work/scripts
+      - ./third_party/VVCSoftware_VTM:/opt/vtm/src:ro
+
+  style-transfer:
+    <<: *common
+    build:
+      context: docker/adain
+      args:
+        BASE_IMAGE: ferienakademie/base:cpu
+    image: ferienakademie/adain:cpu
+    volumes:
+      - ./Dataset:/work/Dataset:ro
+      - ./weights:/work/weights
+      - ./outputs:/work/outputs
+      - ./results:/work/results
+      - ./projects:/work/projects
+      - ./scripts:/work/scripts
+      - ./third_party/AdaIN:/opt/AdaIN
+
+  super-resolution:
+    <<: *common
+    build:
+      context: docker/realesrgan
+      args:
+        BASE_IMAGE: ferienakademie/base:cpu
+    image: ferienakademie/realesrgan:cpu
+    volumes:
+      - ./Dataset:/work/Dataset:ro
+      - ./weights:/work/weights
+      - ./outputs:/work/outputs
+      - ./results:/work/results
+      - ./projects:/work/projects
+      - ./scripts:/work/scripts
+      - ./third_party/Real-ESRGAN:/opt/Real-ESRGAN

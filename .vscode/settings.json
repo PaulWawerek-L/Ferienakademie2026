@@ -1,0 +1,24 @@
+{
+  // The upstream repos are bind-mounted into the containers at /opt/<name>, but
+  // on the host they live in third_party/. Without these paths the language
+  // server cannot resolve `from src.models.image_model import DMCI` in the
+  // project scripts, so go-to-definition and autocomplete go nowhere.
+  "python.analysis.extraPaths": [
+    "third_party/DCVC",
+    "third_party/AdaIN",
+    "third_party/Real-ESRGAN"
+  ],
+  "python.autoComplete.extraPaths": [
+    "third_party/DCVC",
+    "third_party/AdaIN",
+    "third_party/Real-ESRGAN"
+  ],
+  "files.exclude": {
+    "**/__pycache__": true
+  },
+  "search.exclude": {
+    "third_party/**": true,
+    "outputs/**": true,
+    "weights/**": true
+  }
+}
