@@ -185,6 +185,20 @@ Scale expectations from there: VTM is ~10 s per frame, so a 300-frame sequence i
 an overnight job. DCVC-UF is the opposite — ~0.6 s per frame on a laptop CPU,
 which is what the paper's "ultra-fast" claim buys you.
 
+### Getting a real bitstream anyway
+
+DCVC-UF can't produce one without a GPU, but **DCVC-RT (CVPR 2025, its direct
+predecessor) can, on CPU** — its entropy coding is plain Python over the CPU rANS
+coder, and its network falls back to PyTorch by design.
+
+```bash
+make bitstream      # writes real .bin files and decodes them back, bit-exact
+```
+
+See [`scripts/bitstream/README.md`](scripts/bitstream/README.md) for why it
+works, why it needs its own image, and what porting the same thing to DCVC-UF
+would take.
+
 ### The DCVC-UF limitation, precisely
 
 Upstream builds two extensions. Only the first can exist without a GPU:

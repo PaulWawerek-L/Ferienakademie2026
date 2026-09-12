@@ -8,7 +8,7 @@ DOCKER ?= docker
 COMPOSE ?= $(DOCKER) compose
 
 .DEFAULT_GOAL := help
-.PHONY: help sources base build weights smoke experiments smoke-% shell-% clean-outputs push
+.PHONY: help sources base build weights smoke experiments bitstream smoke-% shell-% clean-outputs push
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_%-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -31,6 +31,10 @@ smoke: ## Run every project's smoke test and print a pass/fail table
 
 experiments: ## Run all six experiments and regenerate every figure in results/
 	bash scripts/experiments/run_all.sh
+
+bitstream: ## Write a REAL DCVC bitstream on CPU (DCVC-RT) and decode it back
+	$(COMPOSE) run --rm --no-deps bitstream bash -lc \
+	  'cd /opt/DCVC/DCVC-family/DCVC-RT && python /work/scripts/bitstream/real_bitstream_demo.py'
 
 smoke-%: ## Run one project's smoke test (e.g. make smoke-style-transfer)
 	bash scripts/smoke_all.sh $*

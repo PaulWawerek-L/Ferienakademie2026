@@ -52,6 +52,25 @@ services:
       - ./scripts:/work/scripts
       - ./third_party/DCVC:/opt/DCVC
 
+  # DCVC-RT: real bitstreams on CPU. Deliberately its own image -- it ships a
+  # pybind11 module with the same name as DCVC-UF's but an incompatible
+  # signature, so the two cannot share a Python environment.
+  bitstream:
+    <<: *common
+    build:
+      context: docker/dcvc-rt
+      args:
+        BASE_IMAGE: ferienakademie/base:cpu
+    image: ferienakademie/dcvc-rt:cpu
+    volumes:
+      - ./Dataset:/work/Dataset:ro
+      - ./weights:/work/weights
+      - ./outputs:/work/outputs
+      - ./results:/work/results
+      - ./projects:/work/projects
+      - ./scripts:/work/scripts
+      - ./third_party/DCVC:/opt/DCVC
+
   # The only project with no PyTorch at all. The VTM binaries are compiled into
   # the image; the source is mounted read-only so it can be read, not rebuilt.
   hybrid-vtm:
