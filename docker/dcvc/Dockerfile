@@ -24,11 +24,18 @@ WORKDIR /opt/DCVC
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt
 
+# Upstream binds the rANS decoder's decode calls but no way to read the result
+# back -- see the script. Without this there can be no CPU decoder.
+COPY patch-expose-decoder.sh /tmp/patch-expose-decoder.sh
+RUN bash /tmp/patch-expose-decoder.sh src/cpp/py_rans/bind.cpp
+
 # CPU entropy coder only. Upstream compiles with -Werror, which is strict across
 # compilers/architectures; if this ever fails on a new arch, relax it here
 # rather than in the students' checkout.
 RUN cd src/cpp && pip install --no-build-isolation . \
-    && python -c "import MLCodec_extensions_cpp as m; print('rANS ext OK:', m.__file__)"
+    && python -c "import MLCodec_extensions_cpp as m; \
+         assert hasattr(m.RansDecoder(), 'get_decoded_tensor'), 'decoder accessor missing'; \
+         print('rANS ext OK (encoder + decoder accessor):', m.__file__)"
 
 ENV PYTHONPATH=/opt/DCVC
 WORKDIR /work
