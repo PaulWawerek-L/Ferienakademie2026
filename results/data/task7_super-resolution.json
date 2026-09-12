@@ -1,0 +1,29 @@
+{
+  "label": "05 Super resolution\n(Real-ESRGAN)",
+  "unit": "per image",
+  "input_px": 16384,
+  "output_px": 262144,
+  "detail": "128x128 -> 512x512",
+  "timing": {
+    "median_s": 2.90571433399964,
+    "min_s": 2.809396292999736,
+    "max_s": 3.2182151669985615,
+    "stdev_s": 0.21372365622642497,
+    "repeats": 3,
+    "warmup": 1,
+    "samples_s": [
+      3.2182151669985615,
+      2.809396292999736,
+      2.90571433399964
+    ]
+  },
+  "project": "super-resolution",
+  "env": {
+    "machine": "aarch64",
+    "python": "3.12.14",
+    "omp_num_threads": "4",
+    "torch": "2.12.1+cpu",
+    "torch_num_threads": 4,
+    "cuda_available": false
+  }
+}

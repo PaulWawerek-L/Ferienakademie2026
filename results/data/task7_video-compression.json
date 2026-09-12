@@ -1,0 +1,46 @@
+{
+  "label": "02 Video compression\n(DCVC-UF HTS)",
+  "unit": "per frame",
+  "input_px": 99840,
+  "output_px": 99840,
+  "detail": "RaceHorses 416x240, chunk of 8",
+  "timing": {
+    "median_s": 0.14092252612499578,
+    "min_s": 0.13803251037506925,
+    "max_s": 0.1419846667499769,
+    "stdev_s": 0.0016171493170267263,
+    "repeats": 5,
+    "warmup": 2,
+    "samples_s": [
+      0.13803251037506925,
+      0.1419846667499769,
+      0.14092252612499578,
+      0.14128087499989306,
+      0.13923614074997204
+    ]
+  },
+  "chunk_timing": {
+    "median_s": 1.1273802089999663,
+    "min_s": 1.104260083000554,
+    "max_s": 1.1358773339998152,
+    "stdev_s": 0.01293719453621381,
+    "repeats": 5,
+    "warmup": 2,
+    "samples_s": [
+      1.104260083000554,
+      1.1358773339998152,
+      1.1273802089999663,
+      1.1302469999991445,
+      1.1138891259997763
+    ]
+  },
+  "project": "video-compression",
+  "env": {
+    "machine": "aarch64",
+    "python": "3.12.14",
+    "omp_num_threads": "4",
+    "torch": "2.12.1+cpu",
+    "torch_num_threads": 4,
+    "cuda_available": false
+  }
+}

@@ -109,6 +109,7 @@ Figures and the RD numbers behind them are committed under `results/`:
 | `results/figures/adain_alpha_sweep.png` | alpha 0 -> 1 |
 | `results/figures/sr_comparison.png` | Real-ESRGAN vs classical resampling |
 | `results/figures/sr_perception_distortion.png` | why PSNR/SSIM and the eye disagree |
+| `results/figures/inference_time.png` | inference time + throughput per project |
 
 `outputs/` holds the bulk intermediates (reconstructed `.yuv`, bitstreams,
 per-frame PNGs) and **is** git-ignored — it runs to hundreds of MB.

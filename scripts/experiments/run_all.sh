@@ -69,6 +69,12 @@ if want 6; then
     2>&1 | tee logs/exp6b.log
 fi
 
+if want 7; then
+  echo "### Task 7 -- inference time per project"
+  # Dispatches into all five containers itself.
+  bash scripts/experiments/run_timing.sh 2>&1 | tee logs/exp7.log
+fi
+
 echo
 echo "### Figures"
 run image-compression "python /work/scripts/experiments/plot_rd.py all"

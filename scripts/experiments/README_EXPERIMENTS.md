@@ -17,6 +17,7 @@ bash scripts/experiments/run_all.sh 1 2      # just the image RD pair
 | 5 | `exp5_adain_styles.sh` | style-transfer | ~1 min |
 | 6 | `exp6_sr_compare.py` | super-resolution | ~20 s |
 | 6b | `exp6b_perception_distortion.py` | super-resolution | ~30 s |
+| 7 | `exp7_timing.py` via `run_timing.sh` | all five | ~4 min |
 
 Bulk intermediates (reconstructed `.yuv`, bitstreams) land in
 `outputs/experiments/` and are git-ignored. **Figures and the RD numbers behind
@@ -167,6 +168,36 @@ itself. DCVC-UF's own numbers show the effect: HTS at qp 0 costs 0.0113 bpp over
 published DCVC-UF-vs-VTM result uses long sequences. Treat the video figure as
 "the pipeline works end to end and both codecs are measured identically", not as
 a verdict on which codec is better.
+
+### Task 7 — inference time per project
+
+Figure `results/figures/inference_time.png`. Measured on CPU with warm-up runs
+discarded and the median of the timed runs reported; model construction,
+checkpoint loading and file I/O are outside the timed region.
+
+| project | input | median time | output Mpx/s |
+|---|---|---:|---:|
+| 01 Image (DCVC-UF-Intra) | kodim19 512x768 | **1.895 s** | 0.207 |
+| 02 Video (DCVC-UF HTS) | RaceHorses 416x240, chunk of 8 | **0.141 s** | 0.708 |
+| 03 Hybrid (VTM intra) | kodim19 512x768, QP 32 | **40.400 s** | 0.010 |
+| 04 Style (AdaIN) | kodim19 512x768 | **2.639 s** | 0.149 |
+| 05 Super-res (Real-ESRGAN) | 128x128 -> 512x512 | **2.906 s** | 0.090 |
+
+Two things this measurement exists to avoid getting wrong:
+
+**Warm-up.** The first pass through a PyTorch graph pays for oneDNN algorithm
+selection and allocator growth. Task 6 measured Real-ESRGAN cold at 4.48 s; warm
+it is 2.91 s — a 1.5x error from timing setup instead of inference.
+
+**Seconds are not comparable on their own.** The projects do not share an input
+size: 512×768 for the image work, 416×240 per frame for video, a 128×128 crop
+for super-resolution. That is why the figure carries a throughput panel as well;
+reading only the seconds would rank a small crop against a full image.
+
+DCVC-UF video codes a 416×240 frame in **141 ms** — about 7 fps on a laptop CPU
+for a neural video codec, which is what "ultra-fast" buys. VTM needs 40 s for one
+intra frame: per pixel it is ~73× slower, because a reference encoder exists to
+define correctness, not to run quickly.
 
 ### Task 6 — x4 super-resolution on kodim19
 

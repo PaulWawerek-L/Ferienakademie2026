@@ -1,0 +1,31 @@
+{
+  "label": "04 Style transfer\n(AdaIN)",
+  "unit": "per image",
+  "input_px": 393216,
+  "output_px": 393216,
+  "detail": "kodim19 512x768",
+  "timing": {
+    "median_s": 2.63874558399948,
+    "min_s": 2.6108890419982345,
+    "max_s": 2.7226188339991495,
+    "stdev_s": 0.04312021696532503,
+    "repeats": 5,
+    "warmup": 2,
+    "samples_s": [
+      2.7226188339991495,
+      2.6108890419982345,
+      2.63874558399948,
+      2.6279479600016202,
+      2.6448896680012695
+    ]
+  },
+  "project": "style-transfer",
+  "env": {
+    "machine": "aarch64",
+    "python": "3.12.14",
+    "omp_num_threads": "4",
+    "torch": "2.12.1+cpu",
+    "torch_num_threads": 4,
+    "cuda_available": false
+  }
+}

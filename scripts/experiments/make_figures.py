@@ -235,9 +235,117 @@ def fig_perception_distortion():
     print(f"wrote {FIG}/sr_perception_distortion.png")
 
 
+def fig_timing():
+    """Inference time per project, plus throughput so the bars are comparable.
+
+    Two panels because the projects do not share an input size: seconds alone
+    answers "how long do I wait", megapixels/second answers "which is actually
+    faster". A single bar chart of seconds would quietly compare a 512x768 image
+    against a 128x128 crop.
+
+    Log scale on both: VTM is a reference encoder doing full RDO and lands two
+    orders of magnitude from the neural codecs. On a linear axis every other bar
+    collapses to a sliver.
+    """
+    base = f"{EXP}/07-timing"
+    # Short names: the full model name plus the input size does not fit under a
+    # bar without colliding with its neighbour.
+    SHORT = {
+        "image-compression": ("01 Image\nDCVC-UF-Intra", "512x768"),
+        "video-compression": ("02 Video\nDCVC-UF HTS", "416x240 / frame"),
+        "hybrid-vtm": ("03 Hybrid\nVTM intra", "512x768, QP 32"),
+        "style-transfer": ("04 Style\nAdaIN", "512x768"),
+        "super-resolution": ("05 Super-res\nReal-ESRGAN", "128x128 -> 512x512"),
+    }
+    order = list(SHORT)
+    rows = []
+    for name in order:
+        f = f"{base}/{name}.json"
+        if not os.path.exists(f):
+            print(f"  [skip] {name} not measured yet")
+            continue
+        d = json.load(open(f))
+        t = d["timing"]["median_s"]
+        short, detail = SHORT[name]
+        rows.append({"name": name, "short": short, "detail": detail, "t": t,
+                     # Throughput on OUTPUT pixels: for super-resolution the work
+                     # is proportional to what comes out, not what goes in.
+                     "mpx_s": d["output_px"] / 1e6 / t,
+                     "learned": name != "hybrid-vtm"})
+    if not rows:
+        print("  [skip] no timing results -- run scripts/experiments/run_timing.sh")
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.6, 6.0), dpi=150)
+    fig.patch.set_facecolor(SURFACE)
+    labels = [r["short"] for r in rows]
+    # Emphasis, not a rainbow: the neural models are the subject, the traditional
+    # reference encoder is the context they are measured against.
+    colors = [BLUE if r["learned"] else ORANGE for r in rows]
+
+    def style(ax, ylabel, title):
+        ax.set_facecolor(SURFACE)
+        ax.grid(True, axis="y", color="#e3e2de", linewidth=0.8)
+        ax.set_axisbelow(True)
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+        for sp in ("left", "bottom"):
+            ax.spines[sp].set_color("#e3e2de"); ax.spines[sp].set_linewidth(0.8)
+        ax.tick_params(colors=INK_2, labelsize=9, length=0)
+        ax.set_yscale("log")
+        ax.set_ylabel(ylabel, color=INK_2, fontsize=10, labelpad=8)
+        ax.set_title(title, fontsize=11.5, fontweight="bold", color=INK,
+                     loc="left", pad=12)
+        ax.set_xticks(range(len(labels)))
+        # Input size is the third line of the tick label, not floating text in
+        # the plot: inside the axes it collides with whichever bar is shortest.
+        ax.set_xticklabels([f"{r['short']}\n{r['detail']}" for r in rows],
+                           fontsize=8.3, color=INK_2, linespacing=1.6)
+
+    ax = axes[0]
+    vals = [r["t"] for r in rows]
+    bars = ax.bar(range(len(rows)), vals, color=colors, width=0.6)
+    style(ax, "inference time (s, log scale)", "Time per run")
+    for i, (b, r) in enumerate(zip(bars, rows)):
+        ax.text(i, r["t"] * 1.25,
+                f"{r['t']:.2f} s" if r["t"] >= 1 else f"{r['t'] * 1000:.0f} ms",
+                ha="center", fontsize=10, color=INK, fontweight="bold")
+    ax.set_ylim(min(vals) * 0.28, max(vals) * 4.0)
+
+    ax = axes[1]
+    vals = [r["mpx_s"] for r in rows]
+    bars = ax.bar(range(len(rows)), vals, color=colors, width=0.6)
+    style(ax, "throughput (output megapixels / s, log scale)",
+          "Throughput - what the seconds hide")
+    for i, r in enumerate(rows):
+        ax.text(i, r["mpx_s"] * 1.25, f"{r['mpx_s']:.3f}", ha="center",
+                fontsize=10, color=INK, fontweight="bold")
+    ax.set_ylim(min(vals) * 0.28, max(vals) * 4.0)
+
+    vtm = next((r for r in rows if not r["learned"]), None)
+    vid = next((r for r in rows if r["name"] == "video-compression"), None)
+    note = ("CPU only, no GPU. Warm-up runs discarded, median of the timed runs "
+            "reported; model construction, checkpoint loading and file I/O sit "
+            "outside the timed region.\nOrange is the traditional reference "
+            "encoder, blue the neural models.")
+    if vtm and vid and vtm["mpx_s"] > 0:
+        note += (f" Per pixel VTM is {vid['mpx_s'] / vtm['mpx_s']:.0f}x slower "
+                 f"than DCVC-UF video - it is built for compression research, "
+                 f"not speed.")
+    fig.suptitle("Inference time per project", fontsize=13.5, fontweight="bold",
+                 color=INK, x=0.007, ha="left", y=0.985)
+    fig.text(0.007, 0.014, note, fontsize=8.3, color=INK_2)
+    fig.tight_layout(rect=(0, 0.115, 1, 0.945))
+    os.makedirs(FIG, exist_ok=True)
+    fig.savefig(f"{FIG}/inference_time.png", facecolor=SURFACE)
+    plt.close(fig)
+    print(f"wrote {FIG}/inference_time.png")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("which", choices=["styles", "sr", "pd", "all"], nargs="?", default="all")
+    ap.add_argument("which", choices=["styles", "sr", "pd", "timing", "all"],
+                    nargs="?", default="all")
     a = ap.parse_args()
     if a.which in ("styles", "all"):
         fig_styles()
@@ -245,3 +353,5 @@ if __name__ == "__main__":
         fig_sr()
     if a.which in ("pd", "all"):
         fig_perception_distortion()
+    if a.which in ("timing", "all"):
+        fig_timing()

@@ -1,0 +1,26 @@
+{
+  "label": "03 Hybrid codec\n(VTM intra)",
+  "unit": "per image",
+  "input_px": 393216,
+  "output_px": 393216,
+  "detail": "kodim19 512x768, QP 32",
+  "timing": {
+    "median_s": 40.39981347700086,
+    "min_s": 40.187186559998736,
+    "max_s": 40.712902351000594,
+    "stdev_s": 0.2644528760053348,
+    "repeats": 3,
+    "warmup": 1,
+    "samples_s": [
+      40.39981347700086,
+      40.187186559998736,
+      40.712902351000594
+    ]
+  },
+  "project": "hybrid-vtm",
+  "env": {
+    "machine": "aarch64",
+    "python": "3.11.2",
+    "omp_num_threads": "4"
+  }
+}

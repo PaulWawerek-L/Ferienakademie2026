@@ -1,0 +1,31 @@
+{
+  "label": "01 Image compression\n(DCVC-UF-Intra)",
+  "unit": "per image",
+  "input_px": 393216,
+  "output_px": 393216,
+  "detail": "kodim19 512x768",
+  "timing": {
+    "median_s": 1.895438251000087,
+    "min_s": 1.878313834000437,
+    "max_s": 1.920563209001557,
+    "stdev_s": 0.015306788782939939,
+    "repeats": 5,
+    "warmup": 2,
+    "samples_s": [
+      1.878313834000437,
+      1.8914736679998896,
+      1.897585374999835,
+      1.920563209001557,
+      1.895438251000087
+    ]
+  },
+  "project": "image-compression",
+  "env": {
+    "machine": "aarch64",
+    "python": "3.12.14",
+    "omp_num_threads": "4",
+    "torch": "2.12.1+cpu",
+    "torch_num_threads": 4,
+    "cuda_available": false
+  }
+}
