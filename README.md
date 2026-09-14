@@ -21,8 +21,10 @@
 
 ## Quick start
 
-**Only prerequisite: Docker** (Desktop, or Colima on macOS). No conda, no CUDA,
+**Only prerequisite: Docker** (Desktop + WSL2 on Windows, or Colima on macOS). No conda, no CUDA,
 no Python on the host — everything runs in containers.
+
+*Note (Windows): Setup in WSL2 is recommended. To activate docker in WSL2, enable "integration with my default WSL distro" (tested on Ubuntu 26.04) under* ``Docker Desktop>Settings>Resources>WSL integration``
 
 ```bash
 git clone https://github.com/ZongxieCHEN/Ferienakademie2026.git
