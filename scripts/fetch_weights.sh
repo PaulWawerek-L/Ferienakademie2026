@@ -96,8 +96,7 @@ what `make bitstream` needs for meaningful rate numbers -- without them the
 demo still writes a real, exactly-decodable bitstream, but with random weights,
 so the bytes mean nothing.
 
-  1. Open the "Pretrained models" link in
-     third_party/DCVC/DCVC-family/DCVC-RT/README.md
+  1. Open the "Pretrained models" link in https://github.com/microsoft/DCVC/tree/main/DCVC-family/DCVC-RT
   2. Put cvpr2025_image.pth.tar (and cvpr2025_video.pth.tar) into:
      weights/dcvc-rt/
 MSG
