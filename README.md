@@ -70,6 +70,10 @@ reconstructed `.yuv`, bitstreams, per-frame PNGs — land in `outputs/`
 (git-ignored). Both are on the host, so results open straight from
 Finder/Explorer with nothing to copy out of a container.
 
+*Note (Linux): the containers run as root, so with Docker Engine on Linux the files
+they write to `outputs/`, `results/` and `weights/` belong to root. To edit or delete
+them on the host, take them back with* ``sudo chown -R $USER: outputs results weights``
+
 ---
 
 ## Where the upstream source lives
