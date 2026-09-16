@@ -25,15 +25,17 @@ way to see what AdaIN actually does.
 
 ## The idea, in one function
 
-`net.py`, `adaptive_instance_normalization()`: normalise the content feature to
+`function.py`, `adaptive_instance_normalization()`: normalise the content feature to
 zero mean / unit variance per channel, then re-scale by the **style** feature's
-per-channel mean and std. No learned parameters — style transfer as a statistics
-swap. That single function is the whole point of the project.
+per-channel mean and std. The AdaIN step itself has no learned parameters — the
+encoder (a fixed VGG) and the trained decoder in `net.py` surround it — so style
+transfer comes down to a statistics swap. That single function is the whole
+point of the project.
 
 ## Dependency note
 
 Upstream `requirements.txt` is **not** installed and should not be: it pins
 `torch==1.13.1` with `torchvision==0.4.0` (an impossible pair — 0.4.0 belongs to
 torch 1.2), includes the bogus `pkg-resources==0.0.0`, and torch 1.13.1 has no
-arm64 wheel. The model code itself is plain `nn.Sequential` and runs unmodified
+wheel for Python 3.12 — PyPI's stop at cp311 (cp310 for aarch64). The model code itself is plain `nn.Sequential` and runs unmodified
 on current torch; only the pins were rotten.

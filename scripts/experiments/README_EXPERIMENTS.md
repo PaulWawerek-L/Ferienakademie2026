@@ -1,10 +1,10 @@
-# Experiments (tasks 1–6)
+# Experiments (tasks 1–8)
 
 Everything here runs from the repo root on the host; each script dispatches
 itself into the right container.
 
 ```bash
-bash scripts/experiments/run_all.sh          # all six tasks + figures
+bash scripts/experiments/run_all.sh          # tasks 1-8 + figures
 bash scripts/experiments/run_all.sh 1 2      # just the image RD pair
 ```
 
@@ -12,17 +12,18 @@ bash scripts/experiments/run_all.sh 1 2      # just the image RD pair
 |---|---|---|---|
 | 1 | `exp1_dcvc_image_rd.py` | image-compression | seconds |
 | 2 | `exp2_vtm_intra_rd.sh` | hybrid-vtm | ~4 min |
-| 3 | `exp3_dcvc_video_rd.py` | video-compression | ~6 min |
+| 3 | `exp3_dcvc_video_rd.py` (64 frames, plus 8 matched to VTM) | video-compression | ~7 min |
 | 4 | `exp4_vtm_inter_rd.sh` | hybrid-vtm | ~30 min (8 frames) |
 | 5 | `exp5_adain_styles.sh` | style-transfer | ~1 min |
 | 6 | `exp6_sr_compare.py` | super-resolution | ~20 s |
 | 6b | `exp6b_perception_distortion.py` | super-resolution | ~30 s |
 | 7 | `exp7_timing.py` via `run_timing.sh` | all five | ~4 min |
+| 8 | `scripts/bitstream/uf_bitstream_demo.py` + `uf_video_bitstream_demo.py` | image- / video-compression | ~1 min + ~8 min |
 
 Bulk intermediates (reconstructed `.yuv`, bitstreams) land in
 `outputs/experiments/` and are git-ignored. **Figures and the RD numbers behind
-them are committed to `results/`** — six RD figures (one per task plus the two
-overlays) and the AdaIN / super-resolution sheets.
+them are committed to `results/`** — the full list of figures is in the root
+README.
 
 ---
 
@@ -70,9 +71,10 @@ reproduces the real symbols. Measured on kodim19:
 Uncorrected, DCVC-UF looked several dB *worse* than VTM at low rate — the
 opposite of the published result, and an artefact of the measurement.
 
-**Remaining caveat:** DCVC rates are still estimates. The real encoder needs the
-CUDA-only CUTLASS extension, and the entropy coder's skip threshold and rANS
-overhead are not modelled. VTM's rates are real bytes on disk.
+**Tasks 1 and 3 report estimated DCVC rates** (VTM's are always real bytes). Task 8
+checks that estimate against real bitstreams written by the CPU port of upstream's
+encoder: within 0.2–0.7 % for images, and within 0.1–0.4 % for video once fixed
+per-packet bytes are set aside.
 
 ---
 
@@ -122,7 +124,7 @@ changed, which during this work it did twice.
 | 63 | 0.7642 | 41.76 | | 22 | 1.1735 | 44.03 |
 
 At an equal 33.00 dB, DCVC-UF-Intra spends 0.0499 bpp against VTM's 0.0729 —
-**about 31 % fewer bits**. The gap narrows to roughly 8 % at the high-rate end.
+**about 31 % fewer bits**. The gap narrows to 5–8 % at the high-rate end.
 (The paper reports 10.6 % averaged over all of Kodak; this is one image.)
 
 ### Task 3 — video, RaceHorses, first 64 frames
@@ -135,8 +137,13 @@ At an equal 33.00 dB, DCVC-UF-Intra spends 0.0499 bpp against VTM's 0.0729 —
 | 45 | 0.0797 | 31.63 | 0.1238 | 33.94 |
 | 63 | 0.1932 | 33.29 | 0.3268 | 36.89 |
 
-HTS codes 8 frames into one latent; LD codes one at a time. At matched quality
-HTS is the cheaper of the two, which is the chunk design paying off.
+HTS codes 8 frames into one latent; LD codes one at a time. **On this sequence LD
+is the more efficient of the two.** Interpolated to equal YUV-PSNR, HTS needs about
+30 % more bits on average over the overlapping 26–33 dB range — roughly the same
+at the lowest rate, growing to about 2× at 33 dB. Task 8's real bytes agree
+(+30 %). What the chunk design buys here is speed (task 7) and amortised
+per-packet costs (task 8), not compression. This is one sequence, 64 frames, with
+intra and inter qp set equal: an observation, not a verdict on the models.
 
 The 8-frame variants used for the VTM comparison (`rd_*_8f.json`) sit at higher
 bpp across the board — the intra frame's cost is amortised over 8 frames instead
@@ -169,39 +176,16 @@ published DCVC-UF-vs-VTM result uses long sequences. Treat the video figure as
 "the pipeline works end to end and both codecs are measured identically", not as
 a verdict on which codec is better.
 
-### Task 7 — inference time per project
+### Task 5 — AdaIN across styles
 
-Figure `results/figures/inference_time.png`. Measured on CPU with warm-up runs
-discarded and the median of the timed runs reported; model construction,
-checkpoint loading and file I/O are outside the timed region.
-
-| project | input | median time | output Mpx/s |
-|---|---|---:|---:|
-| 01 Image (DCVC-UF-Intra) | kodim19 512x768 | **1.895 s** | 0.207 |
-| 02 Video (DCVC-UF HTS) | RaceHorses 416x240, chunk of 8 | **0.141 s** | 0.708 |
-| 03 Hybrid (VTM intra) | kodim19 512x768, QP 32 | **40.400 s** | 0.010 |
-| 04 Style (AdaIN) | kodim19 512x768 | **2.639 s** | 0.149 |
-| 05 Super-res (Real-ESRGAN) | 128x128 -> 512x512 | **2.906 s** | 0.090 |
-
-Two things this measurement exists to avoid getting wrong:
-
-**Warm-up.** The first pass through a PyTorch graph pays for oneDNN algorithm
-selection and allocator growth. Task 6 measured Real-ESRGAN cold at 4.48 s; warm
-it is 2.91 s — a 1.5x error from timing setup instead of inference.
-
-**Seconds are not comparable on their own.** The projects do not share an input
-size: 512×768 for the image work, 416×240 per frame for video, a 128×128 crop
-for super-resolution. That is why the figure carries a throughput panel as well;
-reading only the seconds would rank a small crop against a full image.
-
-DCVC-UF video codes a 416×240 frame in **141 ms** — about 7 fps on a laptop CPU
-for a neural video codec, which is what "ultra-fast" buys. VTM needs 40 s for one
-intra frame: per pixel it is ~73× slower, because a reference encoder exists to
-define correctness, not to run quickly.
+Figures `results/figures/adain_style_grid.png` (eight styles, each applied to
+kodim19 and to a RaceHorses frame) and `results/figures/adain_alpha_sweep.png`
+(alpha 0 → 1). There is no metric: style transfer has no reference image to score
+against, so the result is the picture.
 
 ### Task 6 — x4 super-resolution on kodim19
 
-| method | PSNR | SSIM | time |
+| method | PSNR | SSIM | time (single cold run) |
 |---|---:|---:|---:|
 | nearest | 23.17 dB | 0.655 | 0.001 s |
 | bilinear | 23.44 dB | 0.659 | 0.002 s |
@@ -209,8 +193,9 @@ define correctness, not to run quickly.
 | lanczos | **23.79 dB** | **0.683** | 0.004 s |
 | Real-ESRGAN | 23.14 dB | 0.662 | 4.48 s |
 
-**Real-ESRGAN loses on both metrics and is ~1200× slower — and still looks far
-better.** Task 6b below takes that apart.
+**Real-ESRGAN loses on both metrics and is about three orders of magnitude slower —
+and still looks far better.** The times are single cold runs; task 7 measures
+Real-ESRGAN warm at 2.9 s. Task 6b below takes the metric paradox apart.
 
 ### Task 6b — why fidelity metrics and the eye disagree
 
@@ -272,7 +257,89 @@ it a clean bicubic downsample — out of its training distribution. A
 bicubic-trained model (EDSR, or ESRGAN's PSNR-oriented variant) would score
 better here without looking better.
 
-**For the course:** never show the metric table without the crops. Compare the railing in `results/figures/sr_comparison.png`. It is a GAN trained
-for perceptual quality on real-world degradations, and this benchmark hands it a
-clean bicubic downsample; PSNR penalises invented texture even when the texture
-is right. Do not read the table without the pictures.
+**For the course:** never show the metric table without the pictures — compare
+the railing in `results/figures/sr_comparison.png`.
+
+### Task 7 — inference time per project
+
+Figure `results/figures/inference_time.png`. Measured on CPU with warm-up runs
+discarded and the median of the timed runs reported; model construction,
+checkpoint loading and file I/O are outside the timed region.
+
+| project | input | median time | output Mpx/s |
+|---|---|---:|---:|
+| 01 Image (DCVC-UF-Intra) | kodim19 512x768 | **1.895 s** | 0.207 |
+| 02 Video (DCVC-UF HTS) | RaceHorses 416x240, chunk of 8 | **0.141 s** | 0.708 |
+| 03 Hybrid (VTM intra) | kodim19 512x768, QP 32 | **40.400 s** | 0.010 |
+| 04 Style (AdaIN) | kodim19 512x768 | **2.639 s** | 0.149 |
+| 05 Super-res (Real-ESRGAN) | 128x128 -> 512x512 | **2.906 s** | 0.090 |
+
+Two things this measurement exists to avoid getting wrong:
+
+**Warm-up.** The first pass through a PyTorch graph pays for oneDNN algorithm
+selection and allocator growth. Task 6 measured Real-ESRGAN cold at 4.48 s; warm
+it is 2.91 s — a 1.5x error from timing setup instead of inference.
+
+**Seconds are not comparable on their own.** The projects do not share an input
+size: 512×768 for the image work, 416×240 per frame for video, a 128×128 crop
+for super-resolution. That is why the figure carries a throughput panel as well;
+reading only the seconds would rank a small crop against a full image.
+
+DCVC-UF video codes a 416×240 frame in **141 ms** — about 7 fps on a laptop CPU
+for a neural video codec, which is what "ultra-fast" buys. VTM needs 40 s for one
+intra frame: per pixel it is ~73× slower, because a reference encoder exists to
+define correctness, not to run quickly.
+
+### Task 8 — real DCVC-UF bitstreams (image and video)
+
+Figure `results/figures/uf_real_bitstream.png`. Bytes on disk, decoded back
+bit-exactly; see `scripts/bitstream/README.md` for how the CPU codec was derived.
+
+| qp | estimated bpp | actual bpp | payload vs est. | PSNR | actual, skip 0.15 | PSNR | exact |
+|---:|---:|---:|---:|---:|---:|---:|:---:|
+| 0 | 0.0239 | 0.0243 | +0.68% | 30.89 dB | 0.0239 | 30.85 dB | yes |
+| 15 | 0.0499 | 0.0503 | +0.42% | 33.00 dB | 0.0496 | 32.97 dB | yes |
+| 30 | 0.1103 | 0.1109 | +0.25% | 35.17 dB | 0.1101 | 35.15 dB | yes |
+| 45 | 0.2958 | 0.2967 | +0.20% | 37.90 dB | 0.2959 | 37.89 dB | yes |
+| 63 | 0.7642 | 0.7678 | +0.44% | 41.76 dB | 0.7668 | 41.76 dB | yes |
+
+This is the check the measurement rules above were missing: rule 4 (rate from
+quantised symbols) is now confirmed against real bytes, within 0.7 %. The noise
+proxy it replaced would have been 7.9× the real rate at qp 0. And the task 1 + 2
+conclusion survives: at 33.00 dB DCVC-UF needs 31 % fewer bits than VTM, real
+bytes on both sides.
+
+**DCVC-UF video**, RaceHorses 416×240, 64 frames (intra frame + inter frames, same
+qp for both). "total vs est." is the whole file against task 3's estimate —
+see below for what the gap is made of.
+
+HTS (8-frame chunks), ≈ 146 ms/frame to encode, 81 ms/frame to decode:
+
+| qp | estimated bpp | actual bpp | total vs est. | PSNR | actual, skip 0.15 | PSNR | exact |
+|---:|---:|---:|---:|---:|---:|---:|:---:|
+| 0 | 0.0041 | 0.0043 | +4.6% | 25.05 dB | 0.0042 | 24.99 dB | yes |
+| 15 | 0.0107 | 0.0110 | +2.8% | 27.27 dB | 0.0107 | 27.25 dB | yes |
+| 30 | 0.0283 | 0.0289 | +1.9% | 29.45 dB | 0.0285 | 29.41 dB | yes |
+| 45 | 0.0797 | 0.0810 | +1.6% | 31.63 dB | 0.0805 | 31.62 dB | yes |
+| 63 | 0.1932 | 0.1964 | +1.7% | 33.29 dB | 0.1959 | 33.29 dB | yes |
+
+LD (one frame at a time), ≈ 127 ms/frame to encode, 85 ms/frame to decode:
+
+| qp | estimated bpp | actual bpp | total vs est. | PSNR | actual, skip 0.15 | PSNR | exact |
+|---:|---:|---:|---:|---:|---:|---:|:---:|
+| 0 | 0.0071 | 0.0078 | +10.0% | 26.27 dB | 0.0076 | 26.23 dB | yes |
+| 15 | 0.0171 | 0.0178 | +4.2% | 28.58 dB | 0.0174 | 28.54 dB | yes |
+| 30 | 0.0455 | 0.0463 | +1.7% | 31.11 dB | 0.0457 | 31.07 dB | yes |
+| 45 | 0.1238 | 0.1247 | +0.7% | 33.94 dB | 0.1237 | 33.91 dB | yes |
+| 63 | 0.3268 | 0.3278 | +0.3% | 36.89 dB | 0.3272 | 36.88 dB | yes |
+
+**Where the extra bytes go.** At qp 0 LD is 10 % over the estimate, but almost
+none of that is arithmetic coding. Removing this codec's container (286 B: header
+plus a 4-byte length per packet) and the rANS coder's 4-byte flush per packet
+(256 B) leaves **+0.1–0.4 %** — the same as the image codec. LD writes 64
+packets, HTS 9, so HTS pays about 100 fixed bytes where LD pays about 540: the
+chunk design amortises per-packet costs, and at very low rates that is visible in
+real bytes. HTS keeps a steady +1.5–1.6 % after the same removal: 63 inter frames
+are 7 full chunks plus 7 frames, so the last chunk codes a repeated padding frame
+(1/64 of the inter rate ≈ 1.56 %) that the estimate only bills pro rata.
+Figure: `results/figures/uf_video_real_bitstream.png`.

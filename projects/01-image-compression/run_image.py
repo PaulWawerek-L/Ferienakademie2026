@@ -20,6 +20,15 @@ from src.utils.common import get_state_dict
 from src.utils.metrics import calc_psnr
 from src.utils.transforms import rgb2ycbcr, ycbcr2rgb
 
+import sys
+# Rate estimation: use the quantised symbols, not the training-time noise proxy.
+# forward_one_frame() adds uniform noise before estimating bits, which inflates the
+# rate badly at low qp (8x at qp 0 on kodim19, checked against real bitstreams --
+# see scripts/bitstream/uf_bitstream_demo.py). eval_rate() swaps the noise for
+# rounding; the estimate then lands within 0.7% of the arithmetic-coded payload.
+sys.path.insert(0, "/work/scripts/experiments")
+from dcvc_yuv import eval_rate  # noqa: E402
+
 
 def load_rgb(path):
     """PNG -> (1, 3, H, W) float tensor in [0, 1]."""
@@ -70,7 +79,7 @@ def main():
 
     results = []
     for qp in qps:
-        with torch.no_grad():
+        with torch.no_grad(), eval_rate():
             out = net.forward_one_frame(x, torch.tensor([qp]))
 
         rgb_rec = ycbcr2rgb(out["x_hat"] + 0.5)

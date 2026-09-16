@@ -39,12 +39,16 @@ Compare the two on RaceHorses at qp 32 (measured):
 
 | | avg bpp | avg YUV-PSNR |
 |---|---:|---:|
-| `ld`, 8 frames | 0.2297 | 31.52 dB |
-| `hts`, 9 frames | 0.1124 | 29.64 dB |
+| `ld`, 8 frames | 0.0914 | 31.52 dB |
+| `hts`, 9 frames | 0.0621 | 29.64 dB |
 
-Per-frame with `ld`: intra 0.4756 bpp / 33.15 dB, then inter frames at
-0.16–0.26 bpp / ~31 dB. **The inter frames cost about half the intra frame** —
-that gap is the temporal prior, and it is the thing to explain.
+Per-frame with `ld`: intra 0.2695 bpp / 33.15 dB, then inter frames at
+0.034–0.133 bpp / ~31 dB. **On average an inter frame costs about a quarter of
+the intra frame** — that gap is the temporal prior, and it is the thing to explain.
+
+These are estimated rates, taken from the quantised symbols. An earlier version
+used `forward()`'s noise-based `bpp`, which inflated them — most of all for the
+cheap inter frames, where it had suggested "about half".
 
 ## Test data
 
@@ -67,7 +71,38 @@ CUDA proxy in eval mode. Its training branch is one line of plain PyTorch —
 intra reconstruction to the inter model. Without this you cannot start an inter
 frame on CPU at all.
 
-## Limitation
+## Real bitstreams
 
-No real bitstream without CUDA — same as project 01. Speed is *not* the problem:
-9 frames take about 6 s on a laptop CPU.
+Upstream codes inter frames only inside CUDA proxies. This repo ports all three
+structures to the CPU:
+
+```bash
+make uf-video-bitstream
+```
+
+```python
+import uf_video_codec as V                        # scripts/bitstream/
+bs, recon = V.encode_sequence(i_net, p_net, "hts", 8, frames, qp_i, qp_p)
+structure, recon = V.decode_sequence(i_net_dec, p_net_dec, bs)   # from the bytes alone
+```
+
+The structures are coded differently, and the port follows each proxy:
+
+| structure | spatial prior | scales | written as |
+|---|---|---|---|
+| `ld` | 2 steps | from the hyperprior | one symbol array for the whole frame |
+| `hts` | 4 steps, means only | from the hyperprior | one array for the whole chunk |
+| `htl` | 4 steps, scales + means | re-predicted per step | four arrays, steps 3, 2, 1, 0 |
+
+When the scales come from the hyperprior they are known before any latent is
+decoded, so LD and HTS decode a whole frame or chunk in one call — part of why
+they are fast. HTL must decode step by step.
+
+On RaceHorses (64 frames) every frame decodes bit-exactly, and once fixed
+per-packet bytes are removed, coding adds 0.1–0.4 % over the estimate. At the
+lowest rate LD pays ~540 fixed bytes (64 packets) where HTS pays ~100 (9 packets):
+**chunking amortises per-packet costs**, which shows up in real bytes. It does
+not make HTS the better compressor on this sequence, though: at equal PSNR, HTS
+needs about 30 % more bits than LD on average (roughly equal at the lowest rate,
+about 2× at 33 dB). What chunking buys here is speed. Full numbers are in
+`scripts/bitstream/README.md` and `scripts/experiments/README_EXPERIMENTS.md`.

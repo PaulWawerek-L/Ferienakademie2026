@@ -19,13 +19,19 @@ cd /opt/Real-ESRGAN && python inference_realesrgan.py \
   --outscale 4 --fp32
 ```
 
-`--fp32` matters: the default half-precision path has poor CPU kernel coverage.
-Use `--tile 256` if you hit memory limits on a large image.
+`--fp32` is the conservative choice, not a requirement. Measured on an arm64 Mac
+with torch 2.12, half precision runs and is about 1.9× faster (0.39 s vs 0.73 s
+for 64×64 → 256×256); fp16 support on CPUs varies by hardware and PyTorch build,
+though, and it has not been checked on amd64. Try it without `--fp32` if speed
+matters. Use `--tile 256` if you hit memory limits on a large image.
 
 ## CPU cost
 
-x4 on the full 768×512 kodim19 means a 3072×2048 output and several minutes on a
-laptop. Start with crops; scale up once the pipeline works.
+kodim19 is 512×768 (portrait); x4 on the full image means a 2048×3072 output.
+That is 24× the pixels of the 128×128 smoke-test crop, which takes 2.9 s warm, so
+expect on the order of a minute and several GB of memory on a laptop CPU (an
+extrapolation, not a measurement). Start with crops; scale up once the pipeline
+works.
 
 ## Dependency note
 

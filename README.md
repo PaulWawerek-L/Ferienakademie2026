@@ -34,7 +34,7 @@ make sources    # clone the 4 upstream repos into third_party/   ~1 min, 75 MB
 make base       # shared PyTorch base image                      ~5 min, once
 make build      # the four project images                        ~3 min (VTM compiles)
 make weights    # pretrained weights -> ./weights/               ~2 min, 160 MB
-make smoke      # every project's smoke test, pass/fail table    ~70 s
+make smoke      # every project's smoke test, pass/fail table    ~100 s
 ```
 
 `make sources` is not optional on a fresh clone: `third_party/` is git-ignored,
@@ -48,12 +48,14 @@ preflight, so `make smoke` stays green either way.
 ### Reproduce every figure and number
 
 ```bash
-make experiments                            # all six tasks + every figure
+make experiments                            # tasks 1-8 + every figure
 bash scripts/experiments/run_all.sh 1 2      # or a subset, by task number
 ```
 
-Roughly 45 minutes end to end, dominated by task 4 (VTM is a reference encoder).
-It rewrites everything under `results/`. Details, the measurement rules, and the
+About 45 minutes end to end — measured at 44.7 min from a fresh clone on an
+M-series Mac — dominated by task 4 (VTM is a reference encoder). It rewrites
+everything under `results/`, keeps going if one step fails, and exits non-zero
+with a list of the failed steps. Details, the measurement rules, and the
 full result tables: [`scripts/experiments/README_EXPERIMENTS.md`](scripts/experiments/README_EXPERIMENTS.md).
 
 ### Work inside a project
@@ -112,12 +114,14 @@ Figures and the RD numbers behind them are committed under `results/`:
 | `results/figures/sr_comparison.png` | Real-ESRGAN vs classical resampling |
 | `results/figures/sr_perception_distortion.png` | why PSNR/SSIM and the eye disagree |
 | `results/figures/inference_time.png` | inference time + throughput per project |
+| `results/figures/uf_real_bitstream.png` | real DCVC-UF bytes vs estimate vs VTM |
+| `results/figures/uf_video_real_bitstream.png` | real DCVC-UF video bytes vs estimate, and where the extra bytes go |
 
 `outputs/` holds the bulk intermediates (reconstructed `.yuv`, bitstreams,
 per-frame PNGs) and **is** git-ignored — it runs to hundreds of MB.
 
 Reproduce everything with `bash scripts/experiments/run_all.sh`; the methodology,
-its three measurement traps, and the full result tables are in
+its four measurement rules, and the full result tables are in
 [`scripts/experiments/README_EXPERIMENTS.md`](scripts/experiments/README_EXPERIMENTS.md).
 
 ---
@@ -132,7 +136,7 @@ The dependency conflicts are real, not stylistic:
 |---|---|
 | 01 + 02 DCVC-UF | Builds a pybind11 C++ entropy coder against a specific Python/torch |
 | 03 VTM | Pure C++/CMake. No Python, no PyTorch at all |
-| 04 AdaIN | Archived Jan 2024. Its pins (`torch==1.13.1` + `torchvision==0.4.0`) are an impossible pair, and torch 1.13.1 has no arm64 wheel |
+| 04 AdaIN | Archived Jan 2024. Its pins (`torch==1.13.1` + `torchvision==0.4.0`) are an impossible pair, and torch 1.13.1 has no wheel for Python 3.12 (they stop at cp311) |
 | 05 Real-ESRGAN | `basicsr==1.4.2` imports `torchvision.transforms.functional_tensor`, deleted in torchvision 0.17 — needs a patch |
 
 But ~1.5 GB of that is the same PyTorch install, so all Python projects derive
@@ -158,69 +162,78 @@ Five projects, four environments.
 
 ## What actually runs on a laptop (no GPU)
 
-These images are CPU-only and multi-arch (`linux/amd64` + `linux/arm64`), because
-students run them on their own machines. That has one hard consequence:
+These images are CPU-only, because students run them on their own machines, and
+nothing in them is architecture-specific: they are written to build on both
+`linux/arm64` and `linux/amd64`. **So far they have been verified end to end only on
+arm64** (an M-series Mac); Windows/WSL2 setup notes above come from a collaborator.
 
 Measured on an M-series Mac (arm64, 10 CPUs, 8 GB to the Docker VM) via `make smoke`:
 
 | Project | On CPU | Smoke test |
 |---|---|---|
-| 01 Image compression | ⚠️ **Forward pass only** — reconstruction, *estimated* bpp, PSNR. No real bitstream. | ✅ 11 s |
-| 02 Video compression | ⚠️ Same. Surprisingly fast: 9 frames in ~6 s. | ✅ 9 s |
+| 01 Image compression | ✅ **Real bitstreams** via a CPU port of upstream's CUDA-only encoder/decoder (see below). | ✅ 21 s |
+| 02 Video compression | ✅ **Real bitstreams** (LD, HTS, HTL) via a CPU port of upstream's CUDA-only inter coding. ~0.14 s/frame to encode. | ✅ 24 s |
 | 03 Hybrid / VTM | ✅ Fully works. VTM is CPU software anyway (just slow — it is a reference encoder). | ✅ 39 s |
-| 04 Style transfer | ✅ Fully works, seconds per image. | ✅ 5 s |
+| 04 Style transfer | ✅ Fully works, seconds per image. | ✅ 6 s |
 | 05 Super resolution | ✅ Works; x4 on a full image takes minutes, so start with a crop. | ✅ 7 s |
 
 Reference points from that run:
 
-- **DCVC-UF-Intra** on kodim19 (512×768), a real rate–distortion sweep:
-  0.195 bpp / 26.30 dB → 0.485 bpp / 33.25 dB → 1.009 bpp / 38.06 dB.
-- **DCVC-UF video** on RaceHorses, qp 32: intra frame 0.476 bpp / 33.15 dB, then
-  inter frames at 0.16–0.26 bpp / ~31 dB (LD) — the P-frames cost roughly half the
-  intra frame, which is the temporal prior doing its job.
+- **DCVC-UF-Intra** on kodim19 (512×768, YUV420), real bitstreams:
+  0.0243 bpp / 30.89 dB → 0.1109 bpp / 35.17 dB → 0.7678 bpp / 41.76 dB, each
+  decoded back bit-exactly.
+- **DCVC-UF video** on RaceHorses, qp 32 (LD, estimated rate): intra frame
+  0.270 bpp / 33.15 dB, then inter frames at 0.034–0.133 bpp / ~31 dB — on average
+  about a quarter of the intra frame, which is the temporal prior doing its job.
 - **VTM** encoded 4 frames of RaceHorses at QP 37 to 7165 bytes (0.1435 bpp,
   YUV-PSNR 31.45 dB) in 40 s, and the decode was bit-exact against the encoder
   reconstruction.
-- **Real-ESRGAN** took 7 s for 128×128 → 512×512.
+- **Real-ESRGAN**: 128×128 → 512×512 in ~2.9 s of warm inference (task 7); the
+  7 s smoke test also loads the model.
 
 Scale expectations from there: VTM is ~10 s per frame, so a 300-frame sequence is
-an overnight job. DCVC-UF is the opposite — ~0.6 s per frame on a laptop CPU,
-which is what the paper's "ultra-fast" claim buys you.
+an overnight job. DCVC-UF is the opposite — ~0.14 s per frame on a laptop CPU
+(HTS, task 7), which is what the paper's "ultra-fast" claim buys you.
 
-### Getting a real bitstream anyway
+### Real bitstreams on CPU
 
-DCVC-UF can't produce one without a GPU, but **DCVC-RT (CVPR 2025, its direct
-predecessor) can, on CPU** — its entropy coding is plain Python over the CPU rANS
-coder, and its network falls back to PyTorch by design.
+Upstream's DCVC-UF writes a bitstream only through `inference_extensions_cuda`
+(CUTLASS kernels): `model.compress()` / `decompress()` raise `NotImplementedError`
+without a GPU. This repo ports that path to the CPU, for the image model **and
+all three video structures** (LD, HTS, HTL):
 
 ```bash
-make bitstream      # writes real .bin files and decodes them back, bit-exact
+make uf-bitstream          # kodim19 -> .bin -> decoded back, vs estimate and vs VTM
+make uf-video-bitstream    # RaceHorses, 64 frames, HTS + LD -> .bin -> decoded back
 ```
 
-See [`scripts/bitstream/README.md`](scripts/bitstream/README.md) for why it
-works, why it needs its own image, and what porting the same thing to DCVC-UF
-would take.
+The weights, CDF tables and rANS coder are upstream's; only the orchestration the
+CUDA proxies perform is re-implemented, in
+[`uf_codec.py`](scripts/bitstream/uf_codec.py) (image) and
+[`uf_video_codec.py`](scripts/bitstream/uf_video_codec.py) (video). Each is
+verified three ways: bit-exact decode from separate model objects (for video,
+every frame — which also proves the reference buffer stayed in step), a flipped
+byte changes the output, and at `skip_thres = 0` the reconstruction is identical
+to upstream's own `forward()`. `make smoke` runs these checks for the image model,
+LD and HTS; HTL passes them too but is left out of smoke for its 482 MB checkpoint.
 
-### The DCVC-UF limitation, precisely
+What the real bytes showed:
 
-Upstream builds two extensions. Only the first can exist without a GPU:
+- image: arithmetic coding adds only **0.2–0.7 %** to the entropy model's estimate;
+- at equal 33.00 dB DCVC-UF needs **31 % fewer bits than VTM**, now measured in
+  bytes on both sides;
+- image: encode ≈ 1.8 s, decode ≈ 1.0 s, ~1.1 GB peak memory on a laptop CPU;
+- video: after removing fixed per-packet bytes, coding again adds only 0.1–0.4 %;
+  LD pays ~540 fixed bytes over 64 frames where HTS pays ~100 — chunking
+  amortises per-packet costs, visible in real bytes at low rate;
+- video: ≈ 0.14 s/frame to encode and 0.08 s/frame to decode, ~2.2 GB peak.
 
-| Extension | What it is | CPU? |
-|---|---|---|
-| `MLCodec_extensions_cpp` | rANS entropy coder, plain C++/pybind11 | ✅ built in the image |
-| `inference_extensions_cuda` | CUTLASS fused kernels | ❌ CUDA-only, skipped |
+One limit: the streams round-trip through these decoders but are **not** expected
+to be readable by upstream's CUDA decoder (different container; scale indices
+computed in float32 where the proxies use float16).
 
-Without the second, `model.compress()` / `model.decompress()` raise
-`NotImplementedError` — there is no CPU fallback in upstream. `model.forward()`
-is ordinary PyTorch and runs fine.
-
-**This is survivable for teaching.** `forward()` runs the analysis transform,
-the hyperprior, and the entropy model, and returns the entropy model's estimated
-bpp — which is exactly what concepts 1–3 of project 01 are about. What students
-lose is the real bitstream, i.e. the gap between estimated and actual rate.
-
-If you get access to a GPU machine, rebuild with a CUDA base and both extensions
-and the full path works — nothing else in this repo needs to change.
+Details, measured tables and the derivation:
+[`scripts/bitstream/README.md`](scripts/bitstream/README.md).
 
 ---
 
@@ -242,8 +255,11 @@ cvpr2026_video_htl.pth.tar    482 MB   chunk of 8, "large"
 Projects 01 and 02 fall back to a checkpoint-free environment preflight until
 these exist, so `make smoke` stays green either way.
 
-Weights are not baked into the images — they carry their own licenses, would add
-~160 MB to every layer, and change independently of the code. `weights/` is
+Task 6b additionally downloads LPIPS's AlexNet (233 MB) into `weights/torch/` on
+its first run; nothing to do by hand.
+
+Weights are not baked into the images — they carry their own licenses, run to
+hundreds of MB, and change independently of the code. `weights/` is
 bind-mounted, so one download serves every project and survives `docker compose down`.
 
 ---
@@ -254,7 +270,8 @@ bind-mounted, so one download serves every project and survives `docker compose 
 docker/          Dockerfiles — infrastructure, maintained by the TA
 projects/        per-project READMEs, smoke tests, student code
 scripts/         fetch_sources.sh, fetch_weights.sh, smoke_all.sh, yuv2png.sh
-scripts/experiments/   the six RD / comparison experiments and their plots
+scripts/experiments/   tasks 1-8: RD / comparison / timing experiments and their plots
+scripts/bitstream/     CPU codecs that write real DCVC-UF bitstreams, and their self-tests
 third_party/     upstream checkouts, bind-mounted into the containers (git-ignored)
 Dataset/         kodim19.png, RaceHorses_416x240_30.yuv (300 frames, YUV420 8-bit)
 weights/         downloaded checkpoints (git-ignored)

@@ -19,10 +19,15 @@ plus `rd.json` to `outputs/01-image-compression/`. Measured on kodim19 (512×768
 
 | qp | est. bpp | PSNR-RGB |
 |---:|---------:|---------:|
-| 0  | 0.1953   | 26.30 dB |
-| 21 | 0.2545   | 29.33 dB |
-| 42 | 0.4853   | 33.25 dB |
-| 63 | 1.0090   | 38.06 dB |
+| 0  | 0.0279   | 26.30 dB |
+| 21 | 0.0814   | 29.33 dB |
+| 42 | 0.3079   | 33.25 dB |
+| 63 | 0.8826   | 38.06 dB |
+
+The rate is estimated from the quantised symbols. An earlier version of this
+script used `forward()`'s own `bpp`, which adds training-time noise before
+estimating and overstated the rate up to 8× at low qp — real bitstreams (below)
+are how that was caught.
 
 `preflight.py` is the fallback: it verifies the environment with random weights
 and needs no checkpoint, which is what the smoke test runs before you have done
@@ -42,9 +47,23 @@ the manual OneDrive download.
 `qp` is an integer index in `0 .. DMCI.qp_num()-1` — one model covers the whole
 bitrate range, so a rate–distortion curve is a loop over `qp`, not four models.
 
-## CPU limitation
+## Real bitstreams
 
-`compress()` / `decompress()` need `inference_extensions_cuda` (CUTLASS, CUDA-only)
-and raise `NotImplementedError` here. `forward()` gives you the reconstruction and
-the entropy model's **estimated** bpp, which covers all three concepts above.
-What you cannot measure without a GPU is the gap between estimated and actual rate.
+Upstream's `compress()` / `decompress()` need `inference_extensions_cuda`
+(CUTLASS, CUDA-only) and raise `NotImplementedError` here. This repo ports that
+path to the CPU, so the gap between estimated and actual rate can be measured:
+
+```bash
+make uf-bitstream
+```
+
+```python
+import uf_codec                                   # scripts/bitstream/
+net = uf_codec.prepare(net, skip_thres=0.15)
+bitstream, x_hat = uf_codec.compress(net, x, qp)  # bytes you can write to disk
+x_hat = uf_codec.decompress(net, bitstream)       # from the bytes alone
+```
+
+On kodim19 the coded payload lands within 0.2–0.7 % of the estimate. How the port
+was derived from the CUDA proxy — call order, symbol packing, the one missing
+Python binding — is in `scripts/bitstream/UF_PORT_NOTES.md`.

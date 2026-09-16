@@ -9,6 +9,9 @@ if [[ -f /work/weights/dcvc/cvpr2026_video_ld.pth.tar ]]; then
   echo
   echo "=== HTS model (chunk size 8 -- the chunk-based design) ==="
   python /work/projects/02-video-compression/run_video.py --structure hts --frames 9
+  echo
+  echo "=== real bitstreams (CPU port of the CUDA-only inter coding) ==="
+  python /work/scripts/bitstream/uf_video_selftest.py
 else
   echo "no checkpoints in weights/dcvc/ -- running environment preflight only"
   python /work/projects/01-image-compression/preflight.py

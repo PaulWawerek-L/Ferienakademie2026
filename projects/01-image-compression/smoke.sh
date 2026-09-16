@@ -8,6 +8,9 @@ cd /opt/DCVC
 if [[ -f /work/weights/dcvc/cvpr2026_image.pth.tar ]]; then
   echo "checkpoint found -- running the real RD sweep"
   python /work/projects/01-image-compression/run_image.py --rate-num 4
+  echo
+  echo "real bitstream (CPU port of the CUDA-only compress path):"
+  python /work/scripts/bitstream/uf_selftest.py
 else
   echo "no checkpoint in weights/dcvc/ -- running environment preflight only"
   echo "(run 'make weights' for the download instructions)"

@@ -24,6 +24,15 @@ from src.utils.metrics import calc_psnr
 from src.utils.transforms import ycbcr420_to_444_np, yuv_444_to_420
 from src.utils.video_reader import YUV420Reader
 
+import sys
+# Rate estimation: use the quantised symbols, not the training-time noise proxy.
+# forward_one_frame() adds uniform noise before estimating bits, which inflates the
+# rate badly at low qp (8x at qp 0 on kodim19, checked against real bitstreams --
+# see scripts/bitstream/uf_bitstream_demo.py). eval_rate() swaps the noise for
+# rounding; the estimate then lands within 0.7% of the arithmetic-coded payload.
+sys.path.insert(0, "/work/scripts/experiments")
+from dcvc_yuv import eval_rate  # noqa: E402
+
 WEIGHTS = "/work/weights/dcvc"
 
 
@@ -131,7 +140,7 @@ def main():
     # --- intra frame: the image codec, exactly as in project 01 -------------
     yuv0, y0, u0, v0 = frames[0]
     x0 = torch.from_numpy(yuv0).unsqueeze(0).float() / 255.0 - 0.5
-    with torch.no_grad():
+    with torch.no_grad(), eval_rate():
         out = i_net.forward_one_frame(pad_to(x0, pad_r, pad_b), qp)
     x_hat_i_padded = out["x_hat"]
     x_hat_i = crop(x_hat_i_padded, H, W)
@@ -164,7 +173,7 @@ def main():
         x = torch.cat([torch.from_numpy(c[0]).unsqueeze(0) for c in chunk], dim=1)
         x = x.float() / 255.0 - 0.5
 
-        with torch.no_grad():
+        with torch.no_grad(), eval_rate():
             out = p_net.forward_one_frame(pad_to(x, pad_r, pad_b), qp)
 
         # The chunk's bits cover g_frame_delay frames at once -- divide to get a

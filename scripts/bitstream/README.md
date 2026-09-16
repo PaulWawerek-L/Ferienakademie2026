@@ -1,77 +1,85 @@
 # Real bitstreams on CPU
 
-DCVC-UF cannot write one without a GPU. Its `compress()` goes through
-`inference_extensions_cuda` — CUTLASS fused kernels — and raises
-`NotImplementedError` when that import fails. There is no CPU fallback, and the
-CUDA half does the network *and* the entropy coding, so there is nothing to
-borrow.
+Both commands are CPU-only and write bytes that decode back bit-exactly:
 
-**DCVC-RT (CVPR 2025), its direct predecessor, can.** Three differences matter:
-
-| | DCVC-UF | DCVC-RT |
+| | command | derivation |
 |---|---|---|
-| entropy coding | inside the CUDA proxy | plain Python over the CPU rANS coder |
-| missing CUDA extension | `NotImplementedError` | *"fallback to pytorch"* — by design |
-| what still needs CUDA | everything in `compress()` | only stream/event scheduling |
+| **DCVC-UF-Intra** | `make uf-bitstream` | a port of the CUDA image proxy — [`UF_PORT_NOTES.md`](UF_PORT_NOTES.md) |
+| **DCVC-UF video** (LD, HTS, HTL) | `make uf-video-bitstream` | ports of the three inter proxies |
 
-`compress()` in DCVC-RT is readable Python, and it is the reference for what
-UF's CUDA proxy does internally:
+Upstream DCVC-UF cannot do this on its own: its `compress()` goes through
+`inference_extensions_cuda` — CUTLASS fused kernels — and raises
+`NotImplementedError` when that import fails, with the network *and* the entropy
+coding both inside the CUDA code. What is re-implemented here is only that
+orchestration; the weights, CDF tables and rANS coder are upstream's.
 
-```python
-self.entropy_coder.reset()
-self.bit_estimator_z.encode_z(z_hat_write, qp)
-self.gaussian_encoder.encode_y(y_q_w_0, s_w_0)   # the 4 spatial-prior steps
-self.gaussian_encoder.encode_y(y_q_w_1, s_w_1)
-self.gaussian_encoder.encode_y(y_q_w_2, s_w_2)
-self.gaussian_encoder.encode_y(y_q_w_3, s_w_3)
-self.entropy_coder.flush()
-bit_stream = self.entropy_coder.get_encoded_stream()
-```
+## DCVC-UF-Intra
 
-The only CUDA left is a stream and an event used to overlap the decoder network
-with the entropy coding — a latency trick, not computation. On CPU the two halves
-just run in sequence. [`cpu_cuda_shim.py`](cpu_cuda_shim.py) no-ops exactly those
-four entry points (`torch.cuda.Event`, `torch.cuda.stream`,
-`torch.cuda.synchronize`, `CompressionModel.get_cuda_stream`) and nothing else,
-and does nothing at all when CUDA is present — the same script keeps upstream's
-overlap on a GPU box.
+[`uf_codec.py`](uf_codec.py) re-implements what UF's CUDA proxy does,
+on UF's own modules, CDF tables and rANS coder. The derivation, read off the C++,
+is in [`UF_PORT_NOTES.md`](UF_PORT_NOTES.md).
 
-## Run
+Measured on kodim19 (512×768, YUV420). "payload vs est." excludes the codec's own
+13-byte header; every row decodes back bit-exactly from a separate model object.
 
-```bash
-make build          # builds the new `bitstream` image alongside the others
-make bitstream
-```
+| qp | estimated bpp | actual bpp | payload vs est. | PSNR | actual, skip 0.15 | PSNR | exact |
+|---:|---:|---:|---:|---:|---:|---:|:---:|
+| 0 | 0.0239 | 0.0243 | +0.68% | 30.89 dB | 0.0239 | 30.85 dB | yes |
+| 15 | 0.0499 | 0.0503 | +0.42% | 33.00 dB | 0.0496 | 32.97 dB | yes |
+| 30 | 0.1103 | 0.1109 | +0.25% | 35.17 dB | 0.1101 | 35.15 dB | yes |
+| 45 | 0.2958 | 0.2967 | +0.20% | 37.90 dB | 0.2959 | 37.89 dB | yes |
+| 63 | 0.7642 | 0.7678 | +0.44% | 41.76 dB | 0.7668 | 41.76 dB | yes |
 
-Verified on kodim19 (512×768) on an arm64 Mac, CPU only: a real `.bin` per qp in
-`outputs/experiments/08-real-bitstream/`, and the decoder reconstructs from the
-bytes alone with `max abs diff = 0` at every rate point.
+At equal 33.00 dB that is 0.0503 bpp against VTM's 0.0729 — 31 % fewer bits,
+both sides measured in bytes. Figure: `results/figures/uf_real_bitstream.png`.
 
-Without `weights/dcvc-rt/cvpr2025_image.pth.tar` it runs with random weights: the
-bitstream is still real and the round-trip still exact, but the byte counts mean
-nothing. `make weights` prints where to get the checkpoints.
+## DCVC-UF video
 
-## Why its own image
+[`uf_video_codec.py`](uf_video_codec.py) ports the three inter proxies
+(`dmc_ld_proxy.cpp`, `dmc_hts_proxy.cpp`, `dmc_htl_proxy.cpp`); the intra frame goes
+through `uf_codec.py`, as `test_video.py` sends it through `DMCI`. What differs
+from the image codec, and between the structures, is in
+[`UF_PORT_NOTES.md`](UF_PORT_NOTES.md#video).
 
-Both repos build a pybind11 module named `MLCodec_extensions_cpp`, and they are
-not compatible: UF's `pmf_to_quantized_cdf` takes one argument, RT's takes two
-(`pmf, precision`). Same name, different ABI — installing one shadows the other,
-and the mismatch surfaces as a `TypeError` deep inside `update()`. One image
-each is the only clean separation. The `bitstream` service's Dockerfile asserts
-it got the right one at build time.
+**DCVC-UF video**, RaceHorses 416×240, 64 frames (intra frame + inter frames, same
+qp for both). "total vs est." is the whole file against task 3's estimate —
+see below for what the gap is made of.
 
-## If you want this for DCVC-UF specifically
+HTS (8-frame chunks), ≈ 146 ms/frame to encode, 81 ms/frame to decode:
 
-Two options, in order of effort:
+| qp | estimated bpp | actual bpp | total vs est. | PSNR | actual, skip 0.15 | PSNR | exact |
+|---:|---:|---:|---:|---:|---:|---:|:---:|
+| 0 | 0.0041 | 0.0043 | +4.6% | 25.05 dB | 0.0042 | 24.99 dB | yes |
+| 15 | 0.0107 | 0.0110 | +2.8% | 27.27 dB | 0.0107 | 27.25 dB | yes |
+| 30 | 0.0283 | 0.0289 | +1.9% | 29.45 dB | 0.0285 | 29.41 dB | yes |
+| 45 | 0.0797 | 0.0810 | +1.6% | 31.63 dB | 0.0805 | 31.62 dB | yes |
+| 63 | 0.1932 | 0.1964 | +1.7% | 33.29 dB | 0.1959 | 33.29 dB | yes |
 
-1. **A CUDA machine.** Build both extensions per the upstream README
-   (`third_party/DCVC/README.md`) and use `test_video.py --write_stream 1`.
-   This is the supported path and the only one that produces bitstreams
-   interoperable with upstream's decoder.
-2. **Port the orchestration.** Everything needed is already exposed on CPU —
-   `MLCodec_extensions_cpp` binds a complete `RansEncoder`/`RansDecoder`
-   (`encode_y`, `encode_z`, `flush`, `get_encoded_stream`, `set_cdf`) — and
-   DCVC-RT's `compress()`/`decompress()` above show the exact call sequence. What
-   has to be replicated is UF's symbol ordering, its scale→CDF index mapping and
-   its `skip_thres` handling, and the result would only interoperate with
-   upstream's CUDA decoder if it matches byte for byte. Doable, not small.
+LD (one frame at a time), ≈ 127 ms/frame to encode, 85 ms/frame to decode:
+
+| qp | estimated bpp | actual bpp | total vs est. | PSNR | actual, skip 0.15 | PSNR | exact |
+|---:|---:|---:|---:|---:|---:|---:|:---:|
+| 0 | 0.0071 | 0.0078 | +10.0% | 26.27 dB | 0.0076 | 26.23 dB | yes |
+| 15 | 0.0171 | 0.0178 | +4.2% | 28.58 dB | 0.0174 | 28.54 dB | yes |
+| 30 | 0.0455 | 0.0463 | +1.7% | 31.11 dB | 0.0457 | 31.07 dB | yes |
+| 45 | 0.1238 | 0.1247 | +0.7% | 33.94 dB | 0.1237 | 33.91 dB | yes |
+| 63 | 0.3268 | 0.3278 | +0.3% | 36.89 dB | 0.3272 | 36.88 dB | yes |
+
+**Where the extra bytes go.** At qp 0 LD is 10 % over the estimate, but almost
+none of that is arithmetic coding. Removing this codec's container (286 B: header
+plus a 4-byte length per packet) and the rANS coder's 4-byte flush per packet
+(256 B) leaves **+0.1–0.4 %** — the same as the image codec. LD writes 64
+packets, HTS 9, so HTS pays about 100 fixed bytes where LD pays about 540: the
+chunk design amortises per-packet costs, and at very low rates that is visible in
+real bytes. HTS keeps a steady +1.5–1.6 % after the same removal: 63 inter frames
+are 7 full chunks plus 7 frames, so the last chunk codes a repeated padding frame
+(1/64 of the inter rate ≈ 1.56 %) that the estimate only bills pro rata.
+Figure: `results/figures/uf_video_real_bitstream.png`.
+
+**Scope and limits**
+
+- Streams are not expected to be readable by upstream's CUDA decoder: the header
+  is this codec's own, and scale indices are computed in float32 where the proxy
+  uses float16, so a scale on a bin boundary can land in a neighbouring bin.
+- Requires the patched `MLCodec_extensions_cpp` from `docker/dcvc/` (it exposes the
+  decoder's output to Python; upstream binds no accessor).

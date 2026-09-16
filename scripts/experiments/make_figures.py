@@ -15,6 +15,16 @@ from PIL import Image
 
 EXP = "/work/outputs/experiments"
 FIG = "/work/results/figures"
+DATA = "/work/results/data"
+
+
+def publish(src, name):
+    """Copy the data a figure is drawn from into results/data, so the committed
+    numbers are always the ones behind the committed figure. Without this, tasks
+    6b and 7 kept whatever copy was made by hand and never updated on a re-run."""
+    import shutil
+    os.makedirs(DATA, exist_ok=True)
+    shutil.copyfile(src, f"{DATA}/{name}")
 INK, INK_2, SURFACE = "#0b0b0b", "#52514e", "#fcfcfb"
 BLUE, ORANGE = "#2a78d6", "#eb6834"
 
@@ -76,30 +86,166 @@ def fig_styles():
 
 
 def fig_sr():
+    """Where every pixel comes from: sizes, the /4 -> x4 round trip, and the crop.
+
+    Top row is the pipeline at true relative scale -- the 128x192 input is drawn a
+    quarter the height of the 512x768 images, so "x4" is visible, not just stated.
+    One orange box marks the same scene region in each; a zoom funnel (faint
+    dashed guides inside the image, solid lines outside) leads from that box to
+    its crop below. Guides start at the box, so the eye can follow them, but stay
+    faint inside the picture so they do not cover it.
+
+    The crop origin is snapped to a multiple of the scale factor so the input
+    region (32x32) and the output region (128x128) correspond exactly; an
+    unsnapped origin would put the input box on half-pixels.
+    """
+    from matplotlib.patches import ConnectionPatch, FancyArrowPatch, Rectangle
+
     base = f"{EXP}/06-sr-compare"
     res = {r["method"]: r for r in json.load(open(f"{base}/results.json"))["results"]}
-    order = ["00_original", "sr_nearest", "sr_bicubic", "sr_lanczos", "sr_realesrgan"]
-    names = ["original", "nearest", "bicubic", "lanczos", "Real-ESRGAN"]
+    hr = Image.open(f"{base}/00_original.png").convert("RGB")
+    lr = Image.open(f"{base}/01_lowres_input.png").convert("RGB")
+    W, H = hr.size
+    w, h = lr.size
+    s = W // w
+    cs = 128
+    x0, y0 = 200 - 200 % s, 152 - 152 % s
+    box = (x0, y0, x0 + cs, y0 + cs)
+    lbox = (x0 // s, y0 // s, (x0 + cs) // s, (y0 + cs) // s)
+    outs = {m: Image.open(f"{base}/sr_{m}.png").convert("RGB")
+            for m in ("nearest", "bicubic", "lanczos", "realesrgan")}
+    X = "\u00d7"
 
-    fig, axes = plt.subplots(1, len(order), figsize=(2.3 * len(order), 3.9), dpi=150)
+    FW, FH = 15.0, 9.9
+    fig = plt.figure(figsize=(FW, FH), dpi=150)
     fig.patch.set_facecolor(SURFACE)
-    for ax, key, name in zip(axes, order, names):
-        r = res.get(name)
-        sub = "reference" if r is None else f"{r['psnr']:.2f} dB / SSIM {r['ssim']:.3f}"
-        panel(ax, f"{base}/crop_{key}.png", title=name, subtitle=sub)
-        if name == "Real-ESRGAN":
-            ax.title.set_color(BLUE)
-            ax.title.set_fontweight("bold")
 
-    fig.suptitle("x4 super-resolution: the metric and the eye disagree",
-                 fontsize=13, fontweight="bold", color=INK, x=0.02, ha="left")
-    fig.text(0.02, 0.02,
-             "Lanczos wins PSNR by 0.65 dB. Look at the railing. Real-ESRGAN is a GAN "
-             "trained for perceptual quality on real-world\ndegradations, and this "
-             "benchmark feeds it a clean bicubic downsample -- PSNR penalises invented "
-             "texture even when it is right.",
-             fontsize=8, color=INK_2)
-    fig.tight_layout(rect=(0, 0.115, 1, 0.93))
+    def axes_in(left, bottom, width, height):
+        ax = fig.add_axes([left / FW, bottom / FH, width / FW, height / FH])
+        ax.set_xticks([]); ax.set_yticks([])
+        return ax
+
+    def show(ax, img, edge="#e3e2de", lw=0.8, nearest=False):
+        ax.imshow(img, interpolation="nearest" if nearest else "antialiased")
+        for sp in ax.spines.values():
+            sp.set_color(edge); sp.set_linewidth(lw)
+
+    def mark(ax, b, img_h):
+        ax.add_patch(Rectangle((b[0] - 0.5, b[1] - 0.5), b[2] - b[0], b[3] - b[1],
+                               fill=False, edgecolor=ORANGE, linewidth=2.0))
+        for xe in (b[0] - 0.5, b[2] - 0.5):   # faint guides from the box to the image edge
+            ax.plot([xe, xe], [b[3] - 0.5, img_h - 0.5], color=ORANGE, linewidth=0.9,
+                    linestyle=(0, (3, 3)), alpha=0.6)
+        ax.set_xlim(-0.5, ax.get_images()[0].get_array().shape[1] - 0.5)
+        ax.set_ylim(img_h - 0.5, -0.5)
+
+    def label_above(left, width, top, title, size, colour=INK):
+        cx = (left + width / 2) / FW
+        fig.text(cx, (top + 0.36) / FH, title, ha="center", va="bottom",
+                 fontsize=10.5, fontweight="bold", color=colour)
+        fig.text(cx, (top + 0.1) / FH, size, ha="center", va="bottom", fontsize=10, color=INK)
+
+    # ---- top row: the pipeline at true relative scale ----
+    top_h, top_b = 4.25, 4.55
+    big_w = top_h * W / H
+    small_h, small_w = top_h / s, top_h / s * w / h
+    x_hr = 0.55
+    x_lr = x_hr + big_w + 1.5
+    x_out = x_lr + small_w + 1.5
+    lr_b = top_b + (top_h - small_h) / 2
+    ax_hr = axes_in(x_hr, top_b, big_w, top_h)
+    ax_lr = axes_in(x_lr, lr_b, small_w, small_h)
+    ax_out = axes_in(x_out, top_b, big_w, top_h)
+    show(ax_hr, hr); mark(ax_hr, box, H)
+    show(ax_lr, lr, nearest=True); mark(ax_lr, lbox, h)
+    show(ax_out, outs["realesrgan"]); mark(ax_out, box, H)
+    label_above(x_hr, big_w, top_b + top_h, "Original", f"{W} {X} {H} px")
+    label_above(x_lr, small_w, lr_b + small_h, "Low-res input", f"{w} {X} {h} px")
+    label_above(x_out, big_w, top_b + top_h, "Real-ESRGAN output", f"{W} {X} {H} px", BLUE)
+
+    y_mid = (top_b + top_h / 2) / FH
+    for a, b, text in ((x_hr + big_w + 0.15, x_lr - 0.15, f"bicubic  \u00f7{s}"),
+                       (x_lr + small_w + 0.15, x_out - 0.15, f"upscale  {X}{s}")):
+        fig.patches.append(FancyArrowPatch((a / FW, y_mid), (b / FW, y_mid),
+                                           transform=fig.transFigure, arrowstyle="-|>",
+                                           mutation_scale=16, color=INK_2, linewidth=1.3))
+        fig.text((a + b) / 2 / FW, y_mid + 0.14 / FH, text, ha="center", va="bottom",
+                 fontsize=10, color=INK_2)
+
+    # size legend: the correspondence stated once, in numbers
+    lx, vx = x_out + big_w + 0.5, x_out + big_w + 2.05
+    ly = top_b + top_h - 0.05
+    rows = [
+        ("Sizes", None),
+        ("original", f"{W} {X} {H} px"),
+        ("low-res input", f"{w} {X} {h} px  = original \u00f7 {s}"),
+        ("every output", f"{W} {X} {H} px  = input {X} {s}"),
+        (None, None),
+        ("Orange box", None),
+        (f"on {W} {X} {H}", f"{cs} {X} {cs} px"),
+        ("", f"x {box[0]}\u2013{box[2]}, y {box[1]}\u2013{box[3]}"),
+        (f"on {w} {X} {h}", f"{cs // s} {X} {cs // s} px"),
+        ("", f"x {lbox[0]}\u2013{lbox[2]}, y {lbox[1]}\u2013{lbox[3]}"),
+        (None, None),
+        ("", f"one input pixel \u2192 a {s} {X} {s}"),
+        ("", "block of output pixels"),
+    ]
+    for k, v in rows:
+        if k is None:
+            ly -= 0.18
+            continue
+        if v is None:
+            fig.text(lx / FW, ly / FH, k, fontsize=10.5, fontweight="bold", color=INK, va="top")
+        else:
+            fig.text(lx / FW, ly / FH, k, fontsize=9, color=INK_2, va="top")
+            fig.text(vx / FW, ly / FH, v, fontsize=9, color=INK, va="top")
+        ly -= 0.3
+
+    # ---- bottom row: the boxed region, every method; labels BELOW, funnels above ----
+    panels = [
+        ("Original", hr.crop(box), f"{cs} {X} {cs} px crop", "reference", False, INK),
+        ("Low-res input", lr.crop(lbox), f"{cs // s} {X} {cs // s} px crop", "what every method sees", True, INK),
+    ] + [
+        (name, outs[key].crop(box), f"{cs} {X} {cs} px crop",
+         f"{res[metric]['psnr']:.2f} dB  /  SSIM {res[metric]['ssim']:.3f}", False,
+         BLUE if key == "realesrgan" else INK)
+        for name, key, metric in (("nearest", "nearest", "nearest"),
+                                  ("bicubic", "bicubic", "bicubic"),
+                                  ("lanczos", "lanczos", "lanczos"),
+                                  ("Real-ESRGAN", "realesrgan", "Real-ESRGAN"))
+    ]
+    side, gap, bot = 2.1, 0.33, 1.3
+    x = (FW - (len(panels) * side + (len(panels) - 1) * gap)) / 2
+    crop_axes = []
+    for title, img, size, metric, nearest, colour in panels:
+        ax = axes_in(x, bot, side, side)
+        show(ax, img, edge=ORANGE, lw=1.6, nearest=nearest)
+        cx = (x + side / 2) / FW
+        fig.text(cx, (bot - 0.1) / FH, title, ha="center", va="top", fontsize=10.5,
+                 fontweight="bold", color=colour)
+        fig.text(cx, (bot - 0.38) / FH, size, ha="center", va="top", fontsize=9.5, color=INK)
+        fig.text(cx, (bot - 0.62) / FH, metric, ha="center", va="top", fontsize=8.5, color=INK_2)
+        crop_axes.append(ax)
+        x += side + gap
+
+    # zoom funnels: from under each box (image bottom edge) to its crop's top corners
+    for src_ax, b, img_h, dst_ax in ((ax_hr, box, H, crop_axes[0]), (ax_lr, lbox, h, crop_axes[1]),
+                                     (ax_out, box, H, crop_axes[5])):
+        for xe, corner in ((b[0] - 0.5, 0.0), (b[2] - 0.5, 1.0)):
+            fig.add_artist(ConnectionPatch(
+                xyA=(xe, img_h - 0.5), coordsA=src_ax.transData,
+                xyB=(corner, 1.0), coordsB=dst_ax.transAxes,
+                color=ORANGE, linewidth=0.9, alpha=0.8))
+
+    fig.text(0.55 / FW, (FH - 0.22) / FH,
+             f"{X}{s} super-resolution: a {w} {X} {h} input brought back to {W} {X} {H}",
+             fontsize=13.5, fontweight="bold", color=INK, va="top")
+    fig.text(0.55 / FW, 0.14 / FH,
+             f"PSNR / SSIM are computed over the full {W} {X} {H} output against the original, not over the crop. "
+             "Lanczos scores highest; look at the railing \u2014 Real-ESRGAN, a GAN tuned for perceptual "
+             "quality, is the one that looks right.",
+             fontsize=8.5, color=INK_2, va="bottom")
+
     os.makedirs(FIG, exist_ok=True)
     fig.savefig(f"{FIG}/sr_comparison.png", facecolor=SURFACE)
     plt.close(fig)
@@ -141,6 +287,7 @@ def fig_perception_distortion():
         print("  [skip] run exp6b_perception_distortion.py first")
         return
     r = json.load(open(f"{base}/report.json"))
+    publish(f"{base}/report.json", "task6b_perception_distortion.json")
     GREY = "#c9c8c3"
 
     fig, axes = plt.subplots(1, 3, figsize=(13.5, 4.3), dpi=150)
@@ -265,6 +412,7 @@ def fig_timing():
             print(f"  [skip] {name} not measured yet")
             continue
         d = json.load(open(f))
+        publish(f, f"task7_{name}.json")
         t = d["timing"]["median_s"]
         short, detail = SHORT[name]
         rows.append({"name": name, "short": short, "detail": detail, "t": t,

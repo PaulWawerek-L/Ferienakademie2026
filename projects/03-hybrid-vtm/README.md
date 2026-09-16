@@ -23,15 +23,18 @@ EncoderApp -c $VTM_CFG/encoder_randomaccess_vtm.cfg \
   -b out.bin -o rec.yuv
 ```
 
-VTM is a *reference* encoder — correctness first, speed never. Expect seconds
-per frame. Use few frames and small QP sweeps.
+VTM is a *reference* encoder — correctness first, speed never. Measured here:
+about 40 s for one 512×768 intra frame at QP 32, and roughly 10 s per 416×240
+random-access frame at QP 37 (up to a minute at very low QP). Use few frames and
+small QP sweeps.
 
 ## Build note (arm64)
 
-VTM supports arm64, but both of its architecture guards test
-`CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64"` — the macOS spelling. Linux reports
-`aarch64`, so on an arm64 Linux container the guards miss, `-msse4.1` gets added,
-and the build fails. The Dockerfile patches both guards to accept either spelling.
+VTM supports arm64, but its architecture guards — five of them, across three
+CMakeLists — test `CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64"`, the macOS spelling.
+Linux reports `aarch64`, so on an arm64 Linux container the guards miss,
+`-msse4.1` gets added and the x86 SIMD sources are compiled, and the build fails.
+`docker/vtm/patch-arm64.sh` patches every guard, found by search.
 If you ever build VTM outside this image on an ARM Linux box, you will hit the
 same thing.
 
@@ -39,4 +42,6 @@ same thing.
 
 DCVC-UF's published BD-rate numbers are against **VTM-17.0**. This image defaults
 to VTM-23.14; set `VTM_TAG=VTM-17.0` in the environment and rebuild if you need
-numbers comparable to the paper.
+numbers comparable to the paper. **Not tested with VTM-17.0**: an older tree may
+spell its architecture guards differently, in which case the arm64 patch reports
+"nothing to patch" and the build fails the same way as above.

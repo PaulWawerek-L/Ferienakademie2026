@@ -68,8 +68,14 @@ pts = []
 for qp in sorted(int(q) for q in points):
     p = json.load(open(f"{outdir}/psnr_qp{qp}.json"))
     nbytes = os.path.getsize(f"{outdir}/kodim19_qp{qp}.bin")
-    pts.append({"qp": qp, "bpp": nbytes * 8 / (w * h), "psnr_yuv": p["psnr_yuv"],
-                "psnr_y": p["psnr_y"], "psnr_u": p["psnr_u"], "psnr_v": p["psnr_v"],
+    bpp = nbytes * 8 / (w * h)
+    # Same fields, same order and same arithmetic as rebuild_rd.py, which also
+    # writes this file: two writers with two schemas made a fresh re-run differ
+    # from the committed data even when every number agreed. A still image has
+    # no frame rate; fps = 1 is what rebuild_rd.py is given for it.
+    pts.append({"qp": qp, "bpp": bpp, "kbps": bpp * w * h * 1 / 1000, "bytes": nbytes,
+                "psnr_yuv": p["psnr_yuv"], "psnr_y": p["psnr_y"],
+                "psnr_u": p["psnr_u"], "psnr_v": p["psnr_v"],
                 "real_bitstream": True})
 json.dump({"label": "VTM intra", "sequence": "kodim19", "frames": 1,
            "rate": "real bitstream", "points": pts},

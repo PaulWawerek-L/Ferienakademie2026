@@ -8,10 +8,10 @@
 # upstream builds two extensions. We build only the first:
 #   1. MLCodec_extensions_cpp   -- rANS entropy coder, plain C++/pybind11  -> OK
 #   2. inference_extensions_cuda -- CUTLASS fused kernels, CUDA-only       -> SKIPPED
-# Without (2), model.compress()/decompress() raise NotImplementedError, i.e. no
-# real bitstream. model.forward() is pure PyTorch and runs fine, giving the
-# reconstruction, the estimated bpp from the entropy model, and PSNR -- which is
-# exactly what the three core concepts of this project need.
+# Without (2), upstream's model.compress()/decompress() raise NotImplementedError.
+# model.forward() is pure PyTorch and runs fine. For the image model, real
+# bitstreams come from scripts/bitstream/uf_codec.py instead, a CPU port of what
+# (2) does -- which needs the decoder patch applied below.
 ARG BASE_IMAGE=ferienakademie/base:cpu
 FROM ${BASE_IMAGE}
 

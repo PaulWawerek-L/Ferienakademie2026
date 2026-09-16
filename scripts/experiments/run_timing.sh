@@ -13,6 +13,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 export PATH="/Applications/Docker.app/Contents/Resources/bin:${PATH}"
 COMPOSE="${COMPOSE:-docker compose}"
 
+FAILED=()
 ALL=(image-compression video-compression hybrid-vtm style-transfer super-resolution)
 TARGETS=("$@"); [[ ${#TARGETS[@]} -eq 0 ]] && TARGETS=("${ALL[@]}")
 
@@ -26,9 +27,15 @@ for proj in "${TARGETS[@]}"; do
     *)                                   cd_cmd="" ;;
   esac
   ${COMPOSE} run --rm --no-deps "${proj}" bash -lc \
-    "${cd_cmd}python3 /work/scripts/experiments/exp7_timing.py --project ${proj}"
+    "${cd_cmd}python3 /work/scripts/experiments/exp7_timing.py --project ${proj}" \
+    || FAILED+=("${proj}")
 done
 
 echo
 echo "results:"
 ls -1 outputs/experiments/07-timing/*.json 2>/dev/null | sed 's|^|  |'
+
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+  echo "timing FAILED for: ${FAILED[*]}"
+  exit 1
+fi

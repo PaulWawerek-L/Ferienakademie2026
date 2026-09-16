@@ -81,23 +81,3 @@ OneDrive, which has no stable direct-download URL that a script can use.
 Projects 01 and 02 cannot run until this is done. Everything else works now.
 MSG
 fi
-
-# --- DCVC-RT: the model that writes a real bitstream on CPU -----------------
-mkdir -p "${W}/dcvc-rt"
-if compgen -G "${W}/dcvc-rt/*.pth.tar" > /dev/null; then
-  echo
-  echo "DCVC-RT checkpoints found:"
-  ls -la "${W}/dcvc-rt/"
-else
-  cat <<'MSG'
-
-DCVC-RT checkpoints (optional) are also a manual OneDrive download. They are
-what `make bitstream` needs for meaningful rate numbers -- without them the
-demo still writes a real, exactly-decodable bitstream, but with random weights,
-so the bytes mean nothing.
-
-  1. Open the "Pretrained models" link in https://github.com/microsoft/DCVC/tree/main/DCVC-family/DCVC-RT
-  2. Put cvpr2025_image.pth.tar (and cvpr2025_video.pth.tar) into:
-     weights/dcvc-rt/
-MSG
-fi

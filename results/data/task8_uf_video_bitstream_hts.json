@@ -1,0 +1,120 @@
+{
+  "sequence": "RaceHorses_416x240",
+  "frames": 64,
+  "structure": "hts",
+  "chunk": 8,
+  "skip_thres": 0.15,
+  "rate_note": "actual = whole .bin incl. container headers; estimated from task 3",
+  "points": [
+    {
+      "qp": 0,
+      "estimated_bpp": 0.004093885399663868,
+      "full": {
+        "bytes": 3421,
+        "bpp": 0.00428310296474359,
+        "kbps": 12.828750000000001,
+        "psnr_yuv": 25.050922835791447,
+        "roundtrip_exact": true,
+        "encode_s": 9.707480254000984,
+        "decode_s": 5.242237626996939
+      },
+      "skipped": {
+        "bytes": 3321,
+        "bpp": 0.004157902644230769,
+        "kbps": 12.45375,
+        "psnr_yuv": 24.99489185633243,
+        "roundtrip_exact": true,
+        "encode_s": 9.572441338001227,
+        "decode_s": 5.249730626994278
+      }
+    },
+    {
+      "qp": 15,
+      "estimated_bpp": 0.010680222619945804,
+      "full": {
+        "bytes": 8767,
+        "bpp": 0.010976312099358974,
+        "kbps": 32.87625,
+        "psnr_yuv": 27.27333352566729,
+        "roundtrip_exact": true,
+        "encode_s": 9.618847296005697,
+        "decode_s": 5.111124627001118
+      },
+      "skipped": {
+        "bytes": 8564,
+        "bpp": 0.010722155448717949,
+        "kbps": 32.115,
+        "psnr_yuv": 27.246044776358108,
+        "roundtrip_exact": true,
+        "encode_s": 9.805295671001659,
+        "decode_s": 5.126175377998152
+      }
+    },
+    {
+      "qp": 30,
+      "estimated_bpp": 0.028342580035901985,
+      "full": {
+        "bytes": 23078,
+        "bpp": 0.028893729967948718,
+        "kbps": 86.5425,
+        "psnr_yuv": 29.44506827264805,
+        "roundtrip_exact": true,
+        "encode_s": 9.372716462996323,
+        "decode_s": 5.086063585004013
+      },
+      "skipped": {
+        "bytes": 22767,
+        "bpp": 0.028504356971153846,
+        "kbps": 85.37625,
+        "psnr_yuv": 29.411502126081494,
+        "roundtrip_exact": true,
+        "encode_s": 8.998568587994669,
+        "decode_s": 5.048303294002835
+      }
+    },
+    {
+      "qp": 45,
+      "estimated_bpp": 0.07968481308183609,
+      "full": {
+        "bytes": 64685,
+        "bpp": 0.08098582732371795,
+        "kbps": 242.56875000000002,
+        "psnr_yuv": 31.62868523884545,
+        "roundtrip_exact": true,
+        "encode_s": 8.662075545995322,
+        "decode_s": 5.203189086001657
+      },
+      "skipped": {
+        "bytes": 64300,
+        "bpp": 0.08050380608974358,
+        "kbps": 241.12499999999997,
+        "psnr_yuv": 31.620758710022912,
+        "roundtrip_exact": true,
+        "encode_s": 8.353065087001596,
+        "decode_s": 5.130395835003583
+      }
+    },
+    {
+      "qp": 63,
+      "estimated_bpp": 0.19318162330832236,
+      "full": {
+        "bytes": 156884,
+        "bpp": 0.19641927083333333,
+        "kbps": 588.315,
+        "psnr_yuv": 33.29353491121147,
+        "roundtrip_exact": true,
+        "encode_s": 9.297208421005053,
+        "decode_s": 5.3509402529962244
+      },
+      "skipped": {
+        "bytes": 156496,
+        "bpp": 0.1959334935897436,
+        "kbps": 586.86,
+        "psnr_yuv": 33.290268814018184,
+        "roundtrip_exact": true,
+        "encode_s": 8.453386836998106,
+        "decode_s": 5.173152335999475
+      }
+    }
+  ]
+}
