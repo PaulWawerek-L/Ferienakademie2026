@@ -79,7 +79,10 @@ def _nhwc(x):
 
 
 def _from_nhwc(flat, c, h, w):
-    return flat.reshape(1, h, w, c).permute(0, 3, 1, 2)
+    # contiguous(): the permuted view has channels_last strides, which sends x86's
+    # oneDNN down a different conv kernel than the encoder's NCHW tensors took.
+    # The floats then differ by ~1e-6 and the decode is no longer bit-exact.
+    return flat.reshape(1, h, w, c).permute(0, 3, 1, 2).contiguous()
 
 
 def _scale_index(scales):
