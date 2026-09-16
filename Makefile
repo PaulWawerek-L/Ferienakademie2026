@@ -20,7 +20,10 @@ sources: ## Clone the four upstream repos into third_party/ (editable, IDE-navig
 base: ## Build the shared PyTorch base image (do this first)
 	$(DOCKER) build -t ferienakademie/base:cpu -f docker/base/Dockerfile docker/base
 
+# image-compression first: 01 and 02 share one image, and building both at once
+# races on the tag under Docker Engine's containerd image store ("already exists").
 build: sources base ## Build every project image
+	$(COMPOSE) build image-compression
 	$(COMPOSE) build
 
 weights: ## Download pretrained weights into ./weights
